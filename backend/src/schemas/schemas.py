@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 import datetime
 
@@ -68,10 +68,22 @@ class QuestionResponse(BaseModel):
     id: int
     section: str
     response_type: str
+    input_type: Optional[str] = None
+    is_required: bool = False
+    min_value: Optional[str] = None
+    max_value: Optional[str] = None
+    placeholder: Optional[str] = None
     question_text: str
     parent_question_id: Optional[int] = None
     trigger_answer: Optional[str] = None
     options: list[QuestionOptionResponse] = []
+
+    @field_validator('min_value', 'max_value', mode='before')
+    @classmethod
+    def convert_to_string(cls, v):
+        if v is None:
+            return None
+        return str(v)
 
     class Config:
         from_attributes = True
@@ -86,35 +98,6 @@ class PatientResponse(PatientResponseCreate):
 
     class Config:
         from_attributes = True
-
-class PatientSessionListItem(BaseModel):
-    id: int
-    consent_scanned_url: Optional[str] = None
-    consent_timestamp: datetime.datetime
-
-    class Config:
-        from_attributes = True
-
-class PatientSessionDetail(PatientSessionListItem):
-    responses: list[PatientResponse] = []
-
-    class Config:
-        from_attributes = True
-
-class QuestionnaireSubmission(BaseModel):
-    session_id: int
-    responses: list[PatientResponseCreate]
-
-class DoctorAssessmentCreate(BaseModel):
-    patient_session_id: int
-    questionnaire_feedback: Optional[str] = None
-    is_questionnaire_correct: bool = False
-    mammo_birads: Optional[str] = None
-    mammo_density: Optional[str] = None
-    us_biopsy_birads: Optional[str] = None
-    us_biopsy_density: Optional[str] = None
-    precision_diagnosis: Optional[str] = None
-    datapoint_feedback: Optional[str] = None
 
 class AttachmentResponse(BaseModel):
     id: int
@@ -144,3 +127,39 @@ class DoctorAssessmentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class PatientSessionListItem(BaseModel):
+    id: int
+    consent_scanned_url: Optional[str] = None
+    consent_timestamp: datetime.datetime
+    has_assessment: bool = False
+    has_mammo_dicom: bool = False
+    has_mammo_reading: bool = False
+    has_us_video: bool = False
+    has_us_reading: bool = False
+    has_biopsy: bool = False
+
+    class Config:
+        from_attributes = True
+
+class PatientSessionDetail(PatientSessionListItem):
+    responses: list[PatientResponse] = []
+    assessment: Optional[DoctorAssessmentResponse] = None
+
+    class Config:
+        from_attributes = True
+
+class QuestionnaireSubmission(BaseModel):
+    session_id: int
+    responses: list[PatientResponseCreate]
+
+class DoctorAssessmentCreate(BaseModel):
+    patient_session_id: int
+    questionnaire_feedback: Optional[str] = None
+    is_questionnaire_correct: bool = False
+    mammo_birads: Optional[str] = None
+    mammo_density: Optional[str] = None
+    us_biopsy_birads: Optional[str] = None
+    us_biopsy_density: Optional[str] = None
+    precision_diagnosis: Optional[str] = None
+    datapoint_feedback: Optional[str] = None

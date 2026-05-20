@@ -128,7 +128,12 @@ const DoctorPage = ({ isEmbedded = false }) => {
               <tr style={headerRowStyle}>
                 <th style={thStyle}>Patient ID</th>
                 <th style={thStyle}>Consent Date</th>
-                <th style={thStyle}>Consent Image</th>
+                <th style={thStyle}>Doctor Assessment</th>
+                <th style={thStyle}>Mammo DICOM</th>
+                <th style={thStyle}>Mammo Reading</th>
+                <th style={thStyle}>US Video</th>
+                <th style={thStyle}>US Reading</th>
+                <th style={thStyle}>Biopsy</th>
                 <th style={thStyle}>Actions</th>
               </tr>
             </thead>
@@ -137,23 +142,33 @@ const DoctorPage = ({ isEmbedded = false }) => {
                 <tr key={session.id} style={rowStyle}>
                   <td style={tdStyle}>{session.id}</td>
                   <td style={tdStyle}>{new Date(session.consent_timestamp).toLocaleString()}</td>
-                  <td style={tdStyle}>
-                    {session.consent_scanned_url ? (
-                      <img 
-                        src={convertGcsToHttp(session.consent_scanned_url)} 
-                        alt="Consent Snippet" 
-                        style={thumbnailStyle}
-                        onClick={() => window.open(convertGcsToHttp(session.consent_scanned_url), '_blank')}
-                      />
-                    ) : 'No Image'}
+                  <td style={{ ...tdStyle, color: session.has_assessment ? 'green' : 'red', fontWeight: 'bold' }}>
+                    {session.has_assessment ? 'Yes' : 'No'}
+                  </td>
+                  <td style={{ ...tdStyle, color: session.has_mammo_dicom ? 'green' : 'red', fontWeight: 'bold' }}>
+                    {session.has_mammo_dicom ? 'Yes' : 'No'}
+                  </td>
+                  <td style={{ ...tdStyle, color: session.has_mammo_reading ? 'green' : 'red', fontWeight: 'bold' }}>
+                    {session.has_mammo_reading ? 'Yes' : 'No'}
+                  </td>
+                  <td style={{ ...tdStyle, color: session.has_us_video ? 'green' : 'red', fontWeight: 'bold' }}>
+                    {session.has_us_video ? 'Yes' : 'No'}
+                  </td>
+                  <td style={{ ...tdStyle, color: session.has_us_reading ? 'green' : 'red', fontWeight: 'bold' }}>
+                    {session.has_us_reading ? 'Yes' : 'No'}
+                  </td>
+                  <td style={{ ...tdStyle, color: session.has_biopsy ? 'green' : 'red', fontWeight: 'bold' }}>
+                    {session.has_biopsy ? 'Yes' : 'No'}
                   </td>
                   <td style={tdStyle}>
-                    <button 
-                      onClick={() => fetchSessionDetail(session.id)}
-                      style={linkButtonStyle}
-                    >
-                      View Responses
-                    </button>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button 
+                        onClick={() => fetchSessionDetail(session.id)}
+                        style={linkButtonStyle}
+                      >
+                        {session.has_assessment ? 'Edit Assessment' : 'View Responses'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -194,9 +209,10 @@ const DoctorPage = ({ isEmbedded = false }) => {
               </table>
               
               <DoctorAssessmentForm 
-                sessionId={selectedSession.id} 
+                sessionId={selectedSession.id}
+                initialData={selectedSession.assessment}
                 onSaveSuccess={() => {
-                  // Optionally refresh or close modal
+                  fetchSessions();
                   setTimeout(() => setIsModalOpen(false), 2000);
                 }}
               />
@@ -215,8 +231,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
     <Layout 
       userRole="doctor" 
       handleLogout={handleLogout} 
-      maxWidth="100%" 
-      padding="20px"
+      fullWidth={true}
     >
       {content}
     </Layout>
@@ -226,8 +241,6 @@ const DoctorPage = ({ isEmbedded = false }) => {
 const contentStyle = {
   backgroundColor: '#fff',
   padding: '20px',
-  borderRadius: '8px',
-  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   minHeight: '400px',
 };
 
@@ -274,7 +287,7 @@ const thumbnailStyle = {
 const linkButtonStyle = {
   background: 'none',
   border: 'none',
-  color: '#007bff',
+  color: '#14868C',
   textDecoration: 'underline',
   cursor: 'pointer',
   padding: '0',

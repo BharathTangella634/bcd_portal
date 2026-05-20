@@ -1,0 +1,126 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from ..db.session import get_questionnaire_db
+
+router = APIRouter()
+
+INSTITUTE_FILTER = """
+    JOIN (
+        SELECT session_id, MAX(answer) as answer
+        FROM session_data_table
+        WHERE question IN ('Institute Name', 'Enter the Hospital ID(If any, else leave):')
+          AND answer NOT IN ('Other', 'Test')
+          AND answer IS NOT NULL AND answer != ''
+        GROUP BY session_id
+    ) sd_inst ON s.session_id = sd_inst.session_id
+"""
+
+RISK_CASE = """
+    SUM(CASE WHEN s.snehita_lifetime_risk < 0.4004 THEN 1 ELSE 0 END) as no_risk,
+    SUM(CASE WHEN s.snehita_lifetime_risk >= 0.4004 AND s.snehita_lifetime_risk < 0.574 THEN 1 ELSE 0 END) as low_risk,
+    SUM(CASE WHEN s.snehita_lifetime_risk >= 0.574 AND s.snehita_lifetime_risk < 0.795 THEN 1 ELSE 0 END) as moderate_risk,
+    SUM(CASE WHEN s.snehita_lifetime_risk >= 0.795 THEN 1 ELSE 0 END) as high_risk
+"""
+
+
+@router.get("/")
+def get_stats(db: Session = Depends(get_questionnaire_db)):
+    total_res = db.execute(text(f"""
+        SELECT COUNT(DISTINCT s.session_id) as total
+        FROM session_table s {INSTITUTE_FILTER}
+        WHERE s.snehita_lifetime_risk IS NOT NULL
+    """)).fetchone()
+    total_subjects = total_res[0] if total_res else 0
+
+    risk_res = db.execute(text(f"""
+        SELECT {RISK_CASE}
+        FROM session_table s {INSTITUTE_FILTER}
+        WHERE s.snehita_lifetime_risk IS NOT NULL
+    """)).fetchone()
+
+    risk_bins = [
+        {"name": "Baseline Risk", "value": int(risk_res[0] or 0)},
+        {"name": "Evident Risk", "value": int(risk_res[1] or 0)},
+        {"name": "Significant Risk", "value": int(risk_res[2] or 0)},
+        {"name": "High Risk", "value": int(risk_res[3] or 0)},
+    ] if risk_res else []
+
+    hosp_rows = db.execute(text(f"""
+        SELECT sd_inst.answer as institute,
+            SUM(CASE WHEN s.snehita_lifetime_risk < 0.4004 THEN 1 ELSE 0 END) as no_risk,
+            SUM(CASE WHEN s.snehita_lifetime_risk >= 0.4004 AND s.snehita_lifetime_risk < 0.574 THEN 1 ELSE 0 END) as low,
+            SUM(CASE WHEN s.snehita_lifetime_risk >= 0.574 AND s.snehita_lifetime_risk < 0.795 THEN 1 ELSE 0 END) as moderate,
+            SUM(CASE WHEN s.snehita_lifetime_risk >= 0.795 THEN 1 ELSE 0 END) as high
+        FROM session_table s {INSTITUTE_FILTER}
+        WHERE s.snehita_lifetime_risk IS NOT NULL
+        GROUP BY sd_inst.answer
+    """)).fetchall()
+
+    hospital_bins = [
+        {"name": r[0] or "Unknown", "no_risk": int(r[1] or 0), "low": int(r[2] or 0), "moderate": int(r[3] or 0), "high": int(r[4] or 0)}
+        for r in hosp_rows
+    ]
+
+    age_rows = db.execute(text(f"""
+        SELECT
+            CASE
+                WHEN CAST(sd_age.answer AS UNSIGNED) BETWEEN 18 AND 29 THEN '18-29'
+                WHEN CAST(sd_age.answer AS UNSIGNED) BETWEEN 30 AND 39 THEN '30-39'
+                WHEN CAST(sd_age.answer AS UNSIGNED) BETWEEN 40 AND 49 THEN '40-49'
+                WHEN CAST(sd_age.answer AS UNSIGNED) BETWEEN 50 AND 59 THEN '50-59'
+                WHEN CAST(sd_age.answer AS UNSIGNED) BETWEEN 60 AND 69 THEN '60-69'
+                ELSE '70+'
+            END as age_group,
+            SUM(CASE WHEN s.snehita_lifetime_risk < 0.4004 THEN 1 ELSE 0 END) as no_risk,
+            SUM(CASE WHEN s.snehita_lifetime_risk >= 0.4004 AND s.snehita_lifetime_risk < 0.574 THEN 1 ELSE 0 END) as low,
+            SUM(CASE WHEN s.snehita_lifetime_risk >= 0.574 AND s.snehita_lifetime_risk < 0.795 THEN 1 ELSE 0 END) as moderate,
+            SUM(CASE WHEN s.snehita_lifetime_risk >= 0.795 THEN 1 ELSE 0 END) as high
+        FROM session_table s
+        JOIN session_data_table sd_age ON s.session_id = sd_age.session_id
+        {INSTITUTE_FILTER}
+        WHERE s.snehita_lifetime_risk IS NOT NULL
+          AND sd_age.question = 'What is your current age? (Please enter a number - years)'
+        GROUP BY age_group
+        ORDER BY age_group ASC
+    """)).fetchall()
+
+    age_labels = ['18-29', '30-39', '40-49', '50-59', '60-69', '70+']
+    age_map = {r[0]: r for r in age_rows}
+    age_bins = [
+        {"name": label, "no_risk": int(age_map[label][1] or 0) if label in age_map else 0,
+         "low": int(age_map[label][2] or 0) if label in age_map else 0,
+         "moderate": int(age_map[label][3] or 0) if label in age_map else 0,
+         "high": int(age_map[label][4] or 0) if label in age_map else 0}
+        for label in age_labels
+    ]
+
+    month_rows = db.execute(text(f"""
+        SELECT
+            DATE_FORMAT(COALESCE(s.session_end_time, s.session_start_time), '%b %Y') as month_year,
+            DATE_FORMAT(COALESCE(s.session_end_time, s.session_start_time), '%Y-%m') as sort_key,
+            SUM(CASE WHEN s.snehita_lifetime_risk < 0.4004 THEN 1 ELSE 0 END) as no_risk,
+            SUM(CASE WHEN s.snehita_lifetime_risk >= 0.4004 AND s.snehita_lifetime_risk < 0.574 THEN 1 ELSE 0 END) as low,
+            SUM(CASE WHEN s.snehita_lifetime_risk >= 0.574 AND s.snehita_lifetime_risk < 0.795 THEN 1 ELSE 0 END) as moderate,
+            SUM(CASE WHEN s.snehita_lifetime_risk >= 0.795 THEN 1 ELSE 0 END) as high
+        FROM session_table s {INSTITUTE_FILTER}
+        WHERE s.snehita_lifetime_risk IS NOT NULL
+        GROUP BY month_year, sort_key
+        ORDER BY sort_key ASC
+    """)).fetchall()
+
+    month_bins = [
+        {"name": r[0], "no_risk": int(r[2] or 0), "low": int(r[3] or 0), "moderate": int(r[4] or 0), "high": int(r[5] or 0)}
+        for r in month_rows
+    ]
+
+    institutions_empanelled = len(hospital_bins)
+
+    return {
+        "totalSubjects": total_subjects,
+        "institutionsEmpanelled": institutions_empanelled,
+        "riskBins": risk_bins,
+        "hospitalBins": hospital_bins,
+        "ageBins": age_bins,
+        "monthBins": month_bins,
+    }

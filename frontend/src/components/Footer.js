@@ -13,7 +13,7 @@ const Footer = () => {
     <footer style={{ 
       padding: '40px 20px', 
       borderTop: '1px solid #eee', 
-      backgroundColor: '#fffafb', // Slightly lighter hue of the page background (#fff5f7)
+      backgroundColor: 'transparent',
       color: '#555',
       fontSize: '14px',
       lineHeight: '1.6',
@@ -48,8 +48,8 @@ const Footer = () => {
           <div>
             <strong style={{ display: 'block', marginBottom: '10px', fontSize: '16px' }}>Contact Information</strong>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div>Study related details: <a href="mailto:breastcancerdetection@tanuh.ai" style={{ color: '#007bff', textDecoration: 'none' }}>breastcancerdetection@tanuh.ai</a></div>
-              <div>General Email: <a href="mailto:info@tanuh.ai" style={{ color: '#007bff', textDecoration: 'none' }}>info@tanuh.ai</a></div>
+              <div>Study related details: <a href="mailto:breastcancerdetection@tanuh.ai" style={{ color: '#14868C', textDecoration: 'none' }}>breastcancerdetection@tanuh.ai</a></div>
+              <div>General Email: <a href="mailto:info@tanuh.ai" style={{ color: '#14868C', textDecoration: 'none' }}>info@tanuh.ai</a></div>
               <div style={{ marginTop: '10px' }}>
                 <strong>Telephone</strong><br />
                 (080) 2293 4106 &nbsp;|&nbsp; (080) 2293 4107

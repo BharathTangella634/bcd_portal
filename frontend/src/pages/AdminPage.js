@@ -62,7 +62,7 @@ const AdminPage = () => {
   }
 
   return (
-    <Layout userRole="admin" handleLogout={handleLogout}>
+    <Layout userRole="admin" handleLogout={handleLogout} fullWidth={true}>
       <div style={tabContainerStyle}>
         {tabs.map((tab) => (
           <button
@@ -70,8 +70,8 @@ const AdminPage = () => {
             onClick={() => setActiveTab(tab.id)}
             style={{
               ...tabButtonStyle,
-              borderBottom: activeTab === tab.id ? '3px solid #8B008B' : 'none',
-              color: activeTab === tab.id ? '#8B008B' : '#666',
+              borderBottom: activeTab === tab.id ? '3px solid #14868C' : 'none',
+              color: activeTab === tab.id ? '#14868C' : '#666',
               fontWeight: activeTab === tab.id ? 'bold' : 'normal'
             }}
           >
@@ -117,8 +117,6 @@ const tabButtonStyle = {
 const contentStyle = {
   backgroundColor: 'white',
   padding: '40px',
-  borderRadius: '8px',
-  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   minHeight: '400px',
   color: '#666'
 };
@@ -330,7 +328,7 @@ const AdminContent = ({ hospitalName }) => {
 
   const buttonStyle = {
     padding: '10px 20px',
-    backgroundColor: '#8B008B',
+    backgroundColor: '#14868C',
     color: 'white',
     border: 'none',
     borderRadius: '4px',
@@ -341,7 +339,7 @@ const AdminContent = ({ hospitalName }) => {
 
   return (
     <div style={{ color: '#333' }}>
-      <h2 style={{ marginBottom: '20px', color: '#8B008B' }}>Administrative Tasks</h2>
+      <h2 style={{ marginBottom: '20px', color: '#14868C' }}>Administrative Tasks</h2>
       
       {/* 1. Create Doctor Account */}
       <div style={accordionStyle}>

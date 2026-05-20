@@ -25,8 +25,28 @@ function LanguageSwitcher() {
     fetchLanguages();
   }, []);
 
+  const languageMap = {
+    'en': 'english',
+    'hi': 'hindi',
+    'te': 'telugu',
+    'kn': 'kannada',
+    'ta': 'tamil',
+    'ml': 'malayalam',
+    'bn': 'bengali',
+    'mr': 'marathi',
+    'gu': 'gujarati',
+    'pa': 'punjabi',
+    'or': 'odia'
+  };
+
   const changeLanguage = (e) => {
-    i18n.changeLanguage(e.target.value);
+    const code = e.target.value;
+    const mappedLang = languageMap[code];
+    if (mappedLang) {
+      i18n.changeLanguage(mappedLang);
+    } else {
+      i18n.changeLanguage(code);
+    }
   };
 
   return (
@@ -34,7 +54,7 @@ function LanguageSwitcher() {
       <label htmlFor="language-select">Language:</label>
       <select
         id="language-select"
-        value={i18n.language}
+        value={Object.keys(languageMap).find(code => languageMap[code] === i18n.language) || i18n.language}
         onChange={changeLanguage}
       >
         {languages.map((lang) => (

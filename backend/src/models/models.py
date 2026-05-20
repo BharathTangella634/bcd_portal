@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, TIMESTAMP, text, Text, Enum
+from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, TIMESTAMP, text, Text, Enum, JSON
 from sqlalchemy.orm import relationship
 from ..db.session import Base
 import enum
@@ -54,6 +54,12 @@ class Question(Base):
     id = Column(Integer, primary_key=True, index=True)
     section = Column(String(100))
     response_type = Column(Enum("text_field", "option", "numbers_only"), nullable=False)
+    input_type = Column(String(50))
+    is_required = Column(Boolean, default=False)
+    min_value = Column(String(50), nullable=True)
+    max_value = Column(String(50), nullable=True)
+    placeholder = Column(String(255), nullable=True)
+    question = Column(Text, nullable=True)
     parent_question_id = Column(Integer, ForeignKey("questions.id"), nullable=True)
     trigger_answer = Column(String(255), nullable=True)
 
@@ -101,6 +107,7 @@ class PatientSession(Base):
 
     hospital = relationship("Hospital")
     responses = relationship("PatientResponse", back_populates="session", cascade="all, delete-orphan")
+    assessments = relationship("DoctorAssessment", back_populates="session")
 
 class PatientResponse(Base):
     __tablename__ = "patient_responses"
@@ -131,6 +138,9 @@ class DoctorAssessment(Base):
     us_biopsy_density = Column(Enum('A', 'B', 'C', 'D'))
     precision_diagnosis = Column(Enum('4A','4B','4C'))
     datapoint_feedback = Column(Text)
+    clinical_findings = Column(JSON)
+    recommendation_followup = Column(Text)
+    routine_views_uploaded = Column(Boolean, default=False)
     created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
 
     session = relationship("PatientSession")

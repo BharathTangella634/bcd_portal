@@ -9,4 +9,6 @@ python-dotenv
 bcrypt<4.0.0
 pydantic[email]
 google-cloud-storage
+cloud-sql-python-connector[pymysql]
+google-auth
 pytz

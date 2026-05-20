@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Form
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ..db.session import get_db
 from ..models.models import PatientSession, Question, QuestionTranslation, QuestionOption, QuestionOptionTranslation, PatientResponse, DoctorAssessment, Attachment
 from ..schemas.schemas import QuestionResponse, QuestionOptionResponse, QuestionnaireSubmission, PatientSessionListItem, PatientSessionDetail, DoctorAssessmentCreate, DoctorAssessmentResponse
@@ -11,21 +11,45 @@ import uuid
 import datetime
 import pytz
 import json
+import time
 
 router = APIRouter()
+
+GCS_BASE_PREFIX = "tanuh-data-capture"
+
+FILE_TYPE_MAP = {
+    "mammo_dicom": "mammogram",
+    "mammo_cc_left": "mammogram",
+    "mammo_cc_right": "mammogram",
+    "mammo_mlo_left": "mammogram",
+    "mammo_mlo_right": "mammogram",
+    "mammo_reading": "report",
+    "us_video": "ultrasound",
+    "us_reading": "report",
+    "biopsy_reading": "biopsy",
+    "consent": "consent",
+}
 
 def get_ist_now():
     return datetime.datetime.now(pytz.timezone('Asia/Kolkata'))
 
+def build_blob_path(clinic_id, subject_id, file_type, original_filename, ist_now, seq=None):
+    doc_type = FILE_TYPE_MAP.get(file_type, file_type)
+    extension = original_filename.rsplit('.', 1)[-1] if '.' in original_filename else 'bin'
+    upload_date = ist_now.strftime("%Y%m%d")
+    detail = f"{file_type}-{seq}" if seq is not None else file_type
+    doc_name = f"{clinic_id}_{subject_id}_{detail}_{upload_date}.{extension}"
+    return f"{GCS_BASE_PREFIX}/{clinic_id}/{subject_id}/{doc_type}/{doc_name}"
+
 def upload_to_gcs(file_content, destination_blob_name):
     if not settings.GCP_STORAGE_BUCKET:
         raise Exception("GCP_STORAGE_BUCKET not configured")
-    
+
     if settings.GOOGLE_APPLICATION_CREDENTIALS and settings.GOOGLE_APPLICATION_CREDENTIALS.strip():
         storage_client = storage.Client.from_service_account_json(settings.GOOGLE_APPLICATION_CREDENTIALS)
     else:
         storage_client = storage.Client()
-        
+
     bucket = storage_client.bucket(settings.GCP_STORAGE_BUCKET)
     blob = bucket.blob(destination_blob_name)
     blob.upload_from_string(file_content, content_type="application/octet-stream")
@@ -33,39 +57,30 @@ def upload_to_gcs(file_content, destination_blob_name):
 
 @router.get("/questions", response_model=List[QuestionResponse])
 def get_questions(lang: str = "en", db: Session = Depends(get_db)):
-    questions = db.query(Question).all()
+    # Optimized query with joinedload to fetch translations and options in fewer queries
+    questions = db.query(Question).options(
+        joinedload(Question.translations),
+        joinedload(Question.options).joinedload(QuestionOption.translations)
+    ).order_by(Question.id).all()
     
     response = []
     for q in questions:
-        # Get translation for the question
-        trans = db.query(QuestionTranslation).filter(
-            QuestionTranslation.question_id == q.id,
-            QuestionTranslation.language_code == lang
-        ).first()
-        
-        # Fallback to English if translation not found
+        # Find the translation for the requested language or fallback to English
+        trans = next((t for t in q.translations if t.language_code == lang), None)
         if not trans and lang != "en":
-             trans = db.query(QuestionTranslation).filter(
-                QuestionTranslation.question_id == q.id,
-                QuestionTranslation.language_code == "en"
-            ).first()
+            trans = next((t for t in q.translations if t.language_code == "en"), None)
         
-        if not trans:
+        # Use q.question from questions table if lang is 'en' or translation is not found
+        question_text = q.question if (lang == "en" and q.question) else (trans.question_text if trans else q.question)
+        
+        if not question_text:
             continue
             
         options = []
         for opt in q.options:
-            opt_trans = db.query(QuestionOptionTranslation).filter(
-                QuestionOptionTranslation.option_id == opt.id,
-                QuestionOptionTranslation.language_code == lang
-            ).first()
-            
-            # Fallback to English
+            opt_trans = next((t for t in opt.translations if t.language_code == lang), None)
             if not opt_trans and lang != "en":
-                opt_trans = db.query(QuestionOptionTranslation).filter(
-                    QuestionOptionTranslation.option_id == opt.id,
-                    QuestionOptionTranslation.language_code == "en"
-                ).first()
+                opt_trans = next((t for t in opt.translations if t.language_code == "en"), None)
             
             if opt_trans:
                 options.append(QuestionOptionResponse(
@@ -79,7 +94,12 @@ def get_questions(lang: str = "en", db: Session = Depends(get_db)):
             id=q.id,
             section=q.section,
             response_type=q.response_type,
-            question_text=trans.question_text,
+            input_type=q.input_type,
+            is_required=q.is_required,
+            min_value=q.min_value,
+            max_value=q.max_value,
+            placeholder=q.placeholder,
+            question_text=question_text,
             parent_question_id=q.parent_question_id,
             trigger_answer=q.trigger_answer,
             options=sorted(options, key=lambda x: x.sort_order)
@@ -89,27 +109,25 @@ def get_questions(lang: str = "en", db: Session = Depends(get_db)):
 
 @router.post("/consent")
 async def upload_consent(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
+    start_time = time.time()
     try:
         hospital_id = current_user.get("hospital_id")
         if not hospital_id:
              raise HTTPException(status_code=400, detail="User hospital ID not found")
 
-        content = await file.read()
-        
-        # Create a unique filename
+        gcs_url = None
         ist_now = get_ist_now()
-        timestamp = ist_now.strftime("%Y%m%d_%H%M%S")
-        unique_id = uuid.uuid4().hex[:8]
-        extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
-        destination_blob_name = f"consents/{hospital_id}/{timestamp}_{unique_id}.{extension}"
-        
-        gcs_url = upload_to_gcs(content, destination_blob_name)
-        
-        # Save to DB
+
+        if file:
+            content = await file.read()
+            temp_subject_id = f"new-{uuid.uuid4().hex[:8]}"
+            destination_blob_name = build_blob_path(hospital_id, temp_subject_id, "consent", file.filename, ist_now)
+            gcs_url = upload_to_gcs(content, destination_blob_name)
+
         new_session = PatientSession(
             hospital_id=hospital_id,
             consent_scanned_url=gcs_url,
@@ -119,9 +137,14 @@ async def upload_consent(
         db.commit()
         db.refresh(new_session)
         
+        duration = time.time() - start_time
+        print(f"Time taken for POST /api/v1/patient/consent: {duration:.4f} seconds")
+        
         return {"id": new_session.id, "consent_scanned_url": gcs_url}
         
     except Exception as e:
+        duration = time.time() - start_time
+        print(f"Time taken for POST /api/v1/patient/consent (FAILED): {duration:.4f} seconds")
         print(f"Error uploading consent: {e}")
         error_detail = str(e)
         if "403" in error_detail:
@@ -188,6 +211,13 @@ async def create_doctor_assessment(
     us_biopsy_density: Optional[str] = Form(None),
     precision_diagnosis: Optional[str] = Form(None),
     datapoint_feedback: Optional[str] = Form(None),
+    clinical_findings: Optional[str] = Form(None),
+    recommendation_followup: Optional[str] = Form(None),
+    routine_views_uploaded: bool = Form(False),
+    mammo_cc_left: Optional[UploadFile] = File(None),
+    mammo_cc_right: Optional[UploadFile] = File(None),
+    mammo_mlo_left: Optional[UploadFile] = File(None),
+    mammo_mlo_right: Optional[UploadFile] = File(None),
     mammo_dicom: List[UploadFile] = File([]),
     mammo_reading: Optional[UploadFile] = File(None),
     us_video: Optional[UploadFile] = File(None),
@@ -199,6 +229,7 @@ async def create_doctor_assessment(
     try:
         hospital_id = current_user.get("hospital_id")
         doctor_id = current_user.get("id")
+        user_role = current_user.get("role")
         
         if not hospital_id or not doctor_id:
             raise HTTPException(status_code=400, detail="User hospital ID or doctor ID not found")
@@ -212,34 +243,60 @@ async def create_doctor_assessment(
         if not session:
             raise HTTPException(status_code=404, detail="Patient session not found")
             
-        # Create Assessment
-        assessment = DoctorAssessment(
-            patient_session_id=patient_session_id,
-            hospital_id=hospital_id,
-            doctor_id=doctor_id,
-            questionnaire_feedback=questionnaire_feedback,
-            is_questionnaire_correct=is_questionnaire_correct,
-            mammo_birads=mammo_birads,
-            mammo_density=mammo_density,
-            us_biopsy_birads=us_biopsy_birads,
-            us_biopsy_density=us_biopsy_density,
-            precision_diagnosis=precision_diagnosis,
-            datapoint_feedback=datapoint_feedback
-        )
-        db.add(assessment)
-        db.flush() # Get assessment ID
+        # Check if assessment already exists
+        assessment = db.query(DoctorAssessment).filter(
+            DoctorAssessment.patient_session_id == patient_session_id
+        ).first()
+
+        if assessment:
+            # Check permissions: original doctor or hospital admin
+            is_admin = user_role.lower() == 'admin'
+            if assessment.doctor_id != doctor_id and not is_admin:
+                raise HTTPException(status_code=403, detail="Not authorized to edit this assessment")
+            
+            assessment.questionnaire_feedback = questionnaire_feedback
+            assessment.is_questionnaire_correct = is_questionnaire_correct
+            assessment.mammo_birads = mammo_birads
+            assessment.mammo_density = mammo_density
+            assessment.us_biopsy_birads = us_biopsy_birads
+            assessment.us_biopsy_density = us_biopsy_density
+            assessment.precision_diagnosis = precision_diagnosis
+            assessment.datapoint_feedback = datapoint_feedback
+            assessment.clinical_findings = json.loads(clinical_findings) if clinical_findings else None
+            assessment.recommendation_followup = recommendation_followup
+            assessment.routine_views_uploaded = routine_views_uploaded
+        else:
+            assessment = DoctorAssessment(
+                patient_session_id=patient_session_id,
+                hospital_id=hospital_id,
+                doctor_id=doctor_id,
+                questionnaire_feedback=questionnaire_feedback,
+                is_questionnaire_correct=is_questionnaire_correct,
+                mammo_birads=mammo_birads,
+                mammo_density=mammo_density,
+                us_biopsy_birads=us_biopsy_birads,
+                us_biopsy_density=us_biopsy_density,
+                precision_diagnosis=precision_diagnosis,
+                datapoint_feedback=datapoint_feedback,
+                clinical_findings=json.loads(clinical_findings) if clinical_findings else None,
+                recommendation_followup=recommendation_followup,
+                routine_views_uploaded=routine_views_uploaded,
+            )
+            db.add(assessment)
+            db.flush() # Get assessment ID
         
         ist_now = get_ist_now()
         timestamp = ist_now.strftime("%Y%m%d_%H%M%S")
         
-        async def handle_upload(file: UploadFile, file_type: str):
+        async def handle_upload(file: UploadFile, file_type: str, replace: bool = False, seq=None):
+            if replace:
+                db.query(Attachment).filter(
+                    Attachment.assessment_id == assessment.id,
+                    Attachment.file_type == file_type
+                ).delete()
+
             content = await file.read()
-            unique_id = uuid.uuid4().hex[:6]
-            extension = file.filename.split('.')[-1] if '.' in file.filename else 'bin'
-            # Rename file with file_type
-            new_filename = f"{file_type}_{timestamp}_{unique_id}.{extension}"
-            destination_blob_name = f"assessments/{hospital_id}/{patient_session_id}/{new_filename}"
-            
+            destination_blob_name = build_blob_path(hospital_id, patient_session_id, file_type, file.filename, ist_now, seq=seq)
             gcs_url = upload_to_gcs(content, destination_blob_name)
             
             attachment = Attachment(
@@ -252,26 +309,30 @@ async def create_doctor_assessment(
             db.add(attachment)
             return attachment
 
-        # Handle DICOMs (multiple)
-        for dicom_file in mammo_dicom:
+        for idx, dicom_file in enumerate(mammo_dicom, start=1):
             if dicom_file.filename:
-                await handle_upload(dicom_file, "mammo_dicom")
-        
-        # Handle other single uploads
+                await handle_upload(dicom_file, "mammo_dicom", replace=False, seq=idx)
+
+        if mammo_cc_left and mammo_cc_left.filename:
+            await handle_upload(mammo_cc_left, "mammo_cc_left", replace=True)
+        if mammo_cc_right and mammo_cc_right.filename:
+            await handle_upload(mammo_cc_right, "mammo_cc_right", replace=True)
+        if mammo_mlo_left and mammo_mlo_left.filename:
+            await handle_upload(mammo_mlo_left, "mammo_mlo_left", replace=True)
+        if mammo_mlo_right and mammo_mlo_right.filename:
+            await handle_upload(mammo_mlo_right, "mammo_mlo_right", replace=True)
+
         if mammo_reading and mammo_reading.filename:
-            await handle_upload(mammo_reading, "mammo_reading")
+            await handle_upload(mammo_reading, "mammo_reading", replace=True)
         
         if us_video and us_video.filename:
-            # The requirement mentioned us_image/video for renaming, but file_type should probably match the schema
-            await handle_upload(us_video, "us_video")
+            await handle_upload(us_video, "us_video", replace=True)
             
         if us_reading and us_reading.filename:
-            await handle_upload(us_reading, "us_reading")
+            await handle_upload(us_reading, "us_reading", replace=True)
             
         if biopsy_doc and biopsy_doc.filename:
-            # Requirement says rename with biopsy_reading for biopsy_doc? 
-            # "Rename the files with the file_type like mammo_dicom, us_image/video, biopsy_reading, us_reading, mammo_reading."
-            await handle_upload(biopsy_doc, "biopsy_reading")
+            await handle_upload(biopsy_doc, "biopsy_reading", replace=True)
 
         db.commit()
         db.refresh(assessment)

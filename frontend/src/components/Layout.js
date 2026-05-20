@@ -2,13 +2,16 @@ import React from 'react';
 import tanuhLogo from '../assets/tanuh.png';
 import iiscLogo from '../assets/IISc_logo.png';
 
-const Layout = ({ children, userRole, handleLogout, maxWidth = '1200px', padding = '20px' }) => {
+const Layout = ({ children, userRole, handleLogout, maxWidth = '1200px', padding = '20px', fullWidth = false }) => {
+  const effectiveMaxWidth = fullWidth ? '100%' : maxWidth;
+  const effectivePadding = fullWidth ? '0' : padding;
+
   return (
     <div style={containerStyle}>
       <header style={headerStyle}>
         <div style={{
           ...logoContainerStyle,
-          maxWidth: maxWidth
+          maxWidth: effectiveMaxWidth
         }}>
           <img src={tanuhLogo} alt="Tanuh Logo" style={logoStyle} />
           <h1 style={titleStyle}>AI enabled Breast Cancer Screening Tool</h1>
@@ -33,8 +36,8 @@ const Layout = ({ children, userRole, handleLogout, maxWidth = '1200px', padding
 
       <main style={{
         ...mainStyle,
-        maxWidth: maxWidth,
-        padding: padding
+        maxWidth: effectiveMaxWidth,
+        padding: effectivePadding
       }}>
         {children}
       </main>
@@ -46,7 +49,7 @@ const containerStyle = {
   display: 'flex',
   flexDirection: 'column',
   minHeight: '100vh',
-  backgroundColor: '#fff5f7',
+  backgroundColor: 'transparent',
   fontFamily: '"Inter", sans-serif'
 };
 
@@ -75,7 +78,7 @@ const logoStyle = {
 const titleStyle = {
   fontSize: '20px',
   fontWeight: '600',
-  color: '#8B008B',
+  color: '#14868C',
   textAlign: 'center',
   flex: '1'
 };

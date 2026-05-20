@@ -109,7 +109,7 @@ const LoginPage = () => {
       flexDirection: 'column', 
       minHeight: '100vh', 
       padding: '20px',
-      backgroundColor: '#fff5f7', // Mild pink (Breast cancer awareness color)
+      backgroundColor: 'transparent',
       fontFamily: '"Inter", sans-serif'
     }}>
       <header style={{ 
@@ -134,7 +134,7 @@ const LoginPage = () => {
         <h1 style={{ 
           fontSize: '24px', 
           fontWeight: '600', 
-          color: '#8B008B', // Darker magenta color
+          color: '#14868C', // Darker magenta color
           textAlign: 'center',
           flex: '1 1 auto',
           margin: '0 20px'
@@ -217,7 +217,7 @@ const LoginPage = () => {
               disabled={loginLoading}
               style={{ 
                 padding: '10px', 
-                backgroundColor: loginLoading ? '#ccc' : '#007bff', 
+                backgroundColor: loginLoading ? '#ccc' : '#14868C', 
                 color: 'white', 
                 border: 'none', 
                 borderRadius: '4px', 
@@ -229,7 +229,7 @@ const LoginPage = () => {
             </button>
           </form>
           <div style={{ marginTop: '16px', textAlign: 'center' }}>
-            <button style={{ background: 'none', border: 'none', color: '#007bff', cursor: 'pointer', textDecoration: 'underline' }}>
+            <button style={{ background: 'none', border: 'none', color: '#14868C', cursor: 'pointer', textDecoration: 'underline' }}>
               Reset password
             </button>
           </div>

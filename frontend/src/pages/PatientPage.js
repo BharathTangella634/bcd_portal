@@ -102,7 +102,7 @@ const PatientPage = ({ isEmbedded = false }) => {
   }
 
   return (
-    <Layout userRole="staff" handleLogout={handleLogout}>
+    <Layout userRole="staff" handleLogout={handleLogout} fullWidth={true}>
       {content}
     </Layout>
   );
@@ -111,8 +111,6 @@ const PatientPage = ({ isEmbedded = false }) => {
 const contentStyle = {
   backgroundColor: 'white',
   padding: '40px',
-  borderRadius: '8px',
-  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   minHeight: '400px',
   color: '#666'
 };

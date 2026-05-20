@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import './Consent.css';
 import { useTranslation } from 'react-i18next';
-import LanguageSwitcher from './LanguageSwitcher';
 import { Camera, Upload, X, RefreshCw } from 'lucide-react';
+import LanguageSwitcher from './LanguageSwitcher';
 
 function Consent({ onAccept }) {
   const [isChecked, setIsChecked] = useState(false);
@@ -136,23 +136,24 @@ function Consent({ onAccept }) {
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setScannedFile(e.target.files[0]);
+      const file = e.target.files[0];
+      // Create a new File object with a cleaner name if it's from a camera/generic source
+      const fileName = file.name || `upload-${Date.now()}.jpg`;
+      setScannedFile(file);
     }
   };
 
   const handleAccept = async () => {
-    if (!scannedFile) {
-      alert(t('uploadPrompt') || 'Please capture or upload a copy of the physical consent form.');
-      return;
-    }
-
     setIsUploading(true);
-    const formData = new FormData();
-    formData.append('file', scannedFile);
 
     try {
       const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
       const token = localStorage.getItem('token');
+      
+      const formData = new FormData();
+      if (scannedFile) {
+        formData.append('file', scannedFile);
+      }
       
       const response = await fetch(`${apiUrl}/api/v1/patient/consent`, {
         method: 'POST',
@@ -179,8 +180,8 @@ function Consent({ onAccept }) {
 
   return (
     <div className="consent-container">
+      <LanguageSwitcher />
       <div className="language-switch-container">
-        <LanguageSwitcher />
         {isCameraActive && (
           <button type="button" className="switch-camera-btn" onClick={switchCamera}>
             <RefreshCw size={20} />
@@ -194,7 +195,6 @@ function Consent({ onAccept }) {
       <div className="consent-header">
         <p><strong>{t('headernames.studyTitle')} :</strong> {t('header.studyTitle')}</p>
         <p><strong>{t('headernames.sponsor')} :</strong> {t('header.sponsor')}</p>
-        <p><strong>{t('headernames.programManager')} :</strong> {t('header.programManager')}</p>
         <p><strong>{t('headernames.iecApproval')} :</strong> {t('header.iecApproval')}</p>
       </div>
 
@@ -212,14 +212,14 @@ function Consent({ onAccept }) {
 
       <div className="consent-upload">
         <label>
-          <strong>{t('uploadLabel') || 'Capture photo or upload image:'}</strong>
+          <strong>{t('uploadLabel') || 'Capture photo or upload image of the physical consent form signed (Optional):'}</strong>
         </label>
         
         {!isCameraActive && !scannedFile && (
           <div className="upload-options">
             <button type="button" className="action-button camera-btn" onClick={startCamera}>
               <Camera size={20} />
-              {t('useCamera') || 'Use Camera'}
+              {t('takePhoto') || 'Take Photo'}
             </button>
             <div className="upload-wrapper">
               <label htmlFor="consent-file" className="action-button upload-btn">
@@ -257,14 +257,14 @@ function Consent({ onAccept }) {
         {scannedFile && (
           <div className="selected-file-container">
             <p className="file-name">{scannedFile.name}</p>
-            <button type="button" className="retake-btn" onClick={() => {
+            <button type="button" className="action-button retake-btn" onClick={() => {
               setScannedFile(null);
               startCamera();
             }}>
               <RefreshCw size={16} />
               {t('retake') || 'Retake'}
             </button>
-            <button type="button" className="remove-file-btn" onClick={() => setScannedFile(null)}>
+            <button type="button" className="action-button remove-file-btn" onClick={() => setScannedFile(null)}>
               <X size={16} />
             </button>
           </div>
@@ -284,7 +284,7 @@ function Consent({ onAccept }) {
       <button 
         className="consent-button" 
         onClick={handleAccept} 
-        disabled={!isChecked || !scannedFile || isUploading}
+        disabled={!isChecked || isUploading}
       >
         {isUploading ? (t('uploadingText') || 'Uploading...') : t('buttonText')}
       </button>

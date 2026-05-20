@@ -9,7 +9,7 @@ function ThankYou({ onReset }) {
     <div className="thank-you-container">
       <div className="thank-you-card">
         <div className="success-icon">
-          <CheckCircle size={80} color="#8B008B" />
+          <CheckCircle size={80} color="#14868C" />
         </div>
 
         <h1>{t('title')}</h1>

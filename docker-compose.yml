@@ -1,0 +1,37 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: bcd-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./gcp-service-account.json:/app/gcp-service-account.json:ro
+      - ./server-ca.pem:/app/server-ca.pem:ro
+      - ./client-cert.pem:/app/client-cert.pem:ro
+      - ./client-key.pem:/app/client-key.pem:ro
+    networks:
+      - bcdnet
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: ""
+    container_name: bcd-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - bcdnet
+    restart: always
+
+networks:
+  bcdnet:
+    driver: bridge

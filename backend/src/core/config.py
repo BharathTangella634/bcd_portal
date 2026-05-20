@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,13 +13,29 @@ class Settings:
     MYSQL_HOST: str = os.getenv("MYSQL_HOST")
     MYSQL_PORT: str = os.getenv("MYSQL_PORT", 3306)
     MYSQL_DB: str = os.getenv("MYSQL_DB")
-    DATABASE_URL: str = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+    MYSQL_QUERY: str = os.getenv("MYSQL_QUERY", "")
+    MYSQL_SSL_CA: str = os.getenv("MYSQL_SSL_CA")
+    MYSQL_SSL_CERT: str = os.getenv("MYSQL_SSL_CERT")
+    MYSQL_SSL_KEY: str = os.getenv("MYSQL_SSL_KEY")
 
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "9a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b") # Should be in .env
+    @property
+    def DATABASE_URL(self) -> str:
+        password = urllib.parse.quote_plus(self.MYSQL_PASSWORD) if self.MYSQL_PASSWORD else ""
+        url = f"mysql+pymysql://{self.MYSQL_USER}:{password}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}"
+        if self.MYSQL_QUERY:
+            url += f"?{self.MYSQL_QUERY}"
+        return url
+
+    SECRET_KEY: str = os.getenv("SECRET_KEY") # Should be in .env
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
     GCP_STORAGE_BUCKET: str = os.getenv("GCP_STORAGE_BUCKET")
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+    CLOUD_SQL_CONNECTION_NAME: str = os.getenv("CLOUD_SQL_CONNECTION_NAME", "")
+    USE_CLOUD_SQL_CONNECTOR: bool = os.getenv("USE_CLOUD_SQL_CONNECTOR", "false").lower() == "true"
+
+    MYSQL_DB_QUESTIONNAIRE: str = os.getenv("MYSQL_DB_QUESTIONNAIRE", "bcd_questionnaire")
 
 settings = Settings()
