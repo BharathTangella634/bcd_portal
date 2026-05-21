@@ -115,12 +115,12 @@ def get_stats(db: Session = Depends(get_questionnaire_db), app_db: Session = Dep
     ]
 
     inst_res = app_db.execute(text(
-        "SELECT COUNT(*) FROM hospitals WHERE name != 'Test1'"
+        "SELECT COUNT(*) FROM hospitals WHERE name != 'Test'"
     )).fetchone()
     institutions_empanelled = inst_res[0] if inst_res else 0
 
     states_res = app_db.execute(text(
-        "SELECT COUNT(DISTINCT state) FROM hospitals WHERE name != 'Test1' AND state IS NOT NULL AND state != ''"
+        "SELECT COUNT(DISTINCT state) FROM hospitals WHERE name != 'Test' AND state IS NOT NULL AND state != ''"
     )).fetchone()
     states_count = states_res[0] if states_res else 0
 
