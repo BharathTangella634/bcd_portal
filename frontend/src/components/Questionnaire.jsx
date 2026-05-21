@@ -600,6 +600,11 @@ function Questionnaire({ onSubmit, isSubmitting, formStructure, questionnaireDat
       </div>
 
       <form className="questionnaire-container" onSubmit={handleSubmit} noValidate>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '2rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <img src="/tanuh.png" alt="TANUH Logo" style={{ height: 55, objectFit: 'contain' }} />
+          <img src="/MoE_Logo.svg" alt="MoE Logo" style={{ height: 45, objectFit: 'contain' }} />
+          <img src="/IISc_logo.png" alt="IISc Logo" style={{ height: 60, objectFit: 'contain' }} />
+        </div>
         <div className="form-header">
           <h1>{t('ui.header.title')}</h1>
           <p style={{ color: "#533b42ff", fontSize: "18px", marginTop: "8px" }}>{t('ui.header.instructions')}</p>
