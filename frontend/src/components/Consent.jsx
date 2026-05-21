@@ -96,18 +96,66 @@
 // export default Consent;
 
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import './Consent.css';
-// NEW: Import the translation hook and the switcher
 import { useTranslation } from 'react-i18next';
-import LanguageSwitcher from './LanguageSwitcher'; // Import the new component
+import { Camera, Upload, X, RefreshCw } from 'lucide-react';
+import LanguageSwitcher from './LanguageSwitcher';
 
 function Consent({ onAccept }) {
   const [isChecked, setIsChecked] = useState(false);
-  // NEW: Initialize the hook, specify the 'consent' namespace (consent.json)
+  const [scannedFile, setScannedFile] = useState(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState(null);
+  const [facingMode, setFacingMode] = useState('environment');
   const { t } = useTranslation('consent');
-  // alert(t('title'));
-  // 't' is a function that takes a key and returns the text
+
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const startCamera = async (mode = facingMode) => {
+    setCameraError(null);
+    stopCamera();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mode } });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setIsCameraActive(true);
+    } catch (err) {
+      setCameraError('Could not access camera. Please use the upload option.');
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setIsCameraActive(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (video.videoWidth === 0) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (blob) {
+        setScannedFile(new File([blob], `consent-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+        setTimeout(() => stopCamera(), 100);
+      }
+    }, 'image/jpeg', 0.9);
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) setScannedFile(e.target.files[0]);
+  };
+
+  const handleAccept = () => {
+    onAccept({ file: scannedFile || null });
+  };
 
   return (
     <div className="consent-container">
@@ -141,6 +189,53 @@ function Consent({ onAccept }) {
         </div>
       ))}
 
+      <div className="consent-upload">
+        <strong className="consent-upload-title">Consent Upload</strong>
+
+        {!isCameraActive && !scannedFile && (
+          <div className="upload-options">
+            <button type="button" className="action-button camera-btn" onClick={() => startCamera()}>
+              <Camera size={20} />
+              Take Photo
+            </button>
+            <button type="button" className="action-button upload-btn" onClick={() => document.getElementById('consent-file-jsx').click()}>
+              <Upload size={20} />
+              Upload Image
+            </button>
+            <input type="file" id="consent-file-jsx" accept="image/*,application/pdf" onChange={handleFileChange} style={{ display: 'none' }} />
+          </div>
+        )}
+
+        {isCameraActive && (
+          <div className="camera-preview-container">
+            <video ref={videoRef} autoPlay playsInline className="camera-video" />
+            <div className="camera-controls">
+              <button type="button" className="action-button capture-btn" onClick={capturePhoto}>
+                <div className="capture-inner" />
+              </button>
+              <button type="button" className="action-button close-btn" onClick={stopCamera}>
+                <X size={24} />
+              </button>
+            </div>
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
+          </div>
+        )}
+
+        {cameraError && <p className="camera-error">{cameraError}</p>}
+
+        {scannedFile && (
+          <div className="selected-file-container">
+            <p className="file-name">{scannedFile.name}</p>
+            <button type="button" className="action-button retake-btn" onClick={() => { setScannedFile(null); startCamera(); }}>
+              <RefreshCw size={16} /> Retake
+            </button>
+            <button type="button" className="action-button remove-file-btn" onClick={() => setScannedFile(null)}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="consent-checkbox">
         <input
           type="checkbox"
@@ -151,7 +246,7 @@ function Consent({ onAccept }) {
         <label htmlFor="consent-check">{t('checkboxLabel')}</label>
       </div>
 
-      <button onClick={onAccept} disabled={!isChecked}>
+      <button onClick={handleAccept} disabled={!isChecked}>
         {t('buttonText')}
       </button>
     </div>

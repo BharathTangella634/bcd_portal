@@ -11,6 +11,9 @@ const DoctorPage = ({ isEmbedded = false }) => {
   const [selectedSession, setSelectedSession] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [sortStack, setSortStack] = useState([{ key: 'date', dir: 'desc' }]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 20;
 
   useEffect(() => {
     if (!isEmbedded) {
@@ -150,9 +153,9 @@ const DoctorPage = ({ isEmbedded = false }) => {
 
   const content = (
     <div style={contentStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ color: '#333', margin: 0 }}>Subject List</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h2 style={{ color: '#333', margin: 0 }}>Subject List</h2>
           {sortStack.map((s, i) => (
             <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, backgroundColor: '#e8f7f8', color: '#14868C', fontWeight: 600 }}>
               {s.key}{s.dir === 'asc' ? '↑' : '↓'}
@@ -164,24 +167,42 @@ const DoctorPage = ({ isEmbedded = false }) => {
             </button>
           )}
         </div>
+        <input
+          type="text"
+          placeholder="Search by Subject ID..."
+          value={searchTerm}
+          onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+          style={{ width: 260, padding: '8px 14px', borderRadius: 8, border: '1.5px solid #c8e0e2', fontSize: 13, outline: 'none', fontFamily: 'inherit' }}
+        />
       </div>
 
       {loading && <p>Loading sessions...</p>}
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
-      {!loading && !error && sessions.length === 0 && <p>No sessions found.</p>}
-      
-      {!loading && !error && sessions.length > 0 && (
+      {(() => {
+        const filtered = sessions.filter(s => {
+          if (!searchTerm) return true;
+          const term = searchTerm.toLowerCase();
+          return (s.patient_id || '').toLowerCase().includes(term) || (s.id || '').toLowerCase().includes(term);
+        });
+        const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+        const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+        if (!loading && !error && sessions.length === 0) return <p>No sessions found.</p>;
+        if (!loading && !error && filtered.length === 0) return <p>No subjects match "{searchTerm}".</p>;
+
+        return !loading && !error && filtered.length > 0 && (
+          <><div style={{ fontSize: 13, color: '#888', marginBottom: 8 }}>Showing {paginated.length} of {filtered.length} subjects {searchTerm && `(filtered from ${sessions.length})`}</div>
         <div style={tableContainerStyle}>
           <table style={tableStyle}>
             <thead>
               <tr style={headerRowStyle}>
-                <th style={thCenterStyle}>Patient ID</th>
+                <th style={thCenterStyle}>Subject ID</th>
                 <th style={sortableThStyle} onClick={() => handleSort('date')}>Date{sortArrow('date')}</th>
                 <th style={thCenterStyle}>Risk</th>
                 <th style={sortableThStyle} onClick={() => handleSort('assessment')}>Assessment{sortArrow('assessment')}</th>
-                <th style={thCenterStyle}>Mammo DICOM</th>
-                <th style={thCenterStyle}>Mammo Report</th>
+                <th style={thCenterStyle}>Mammogram</th>
+                <th style={thCenterStyle}>Mammogram Report</th>
                 <th style={thCenterStyle}>Sonogram</th>
                 <th style={thCenterStyle}>Sonogram Report</th>
                 <th style={thCenterStyle}>Biopsy</th>
@@ -190,7 +211,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
               </tr>
             </thead>
             <tbody>
-              {sessions.map((session) => (
+              {paginated.map((session) => (
                 <tr key={session.id} style={rowStyle}>
                   <td style={{ ...tdStyle, textAlign: 'center' }}>{session.patient_id || session.id?.substring(0, 8)}</td>
                   <td style={{ ...tdStyle, textAlign: 'center', fontSize: 12 }}>{session.consent_timestamp ? new Date(session.consent_timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</td>
@@ -213,14 +234,14 @@ const DoctorPage = ({ isEmbedded = false }) => {
                   <td style={statusCellStyle(session.has_mammo_dicom)}>
                     {session.has_mammo_dicom ? 'Yes' : 'No'}
                   </td>
-                  <td style={statusCellStyle(session.has_mammo_reading)}>
-                    {session.has_mammo_reading ? 'Yes' : 'No'}
+                  <td style={smrCellStyle(session.has_mammo_reading)}>
+                    {session.has_mammo_reading === 'SMR' ? 'Yes (SMR)' : session.has_mammo_reading === 'Yes' ? 'Yes' : 'No'}
                   </td>
-                  <td style={statusCellStyle(session.has_us_video)}>
-                    {session.has_us_video ? 'Yes' : 'No'}
+                  <td style={smrCellStyle(session.has_us_video)}>
+                    {session.has_us_video === 'SMR' ? 'Yes (SMR)' : session.has_us_video === 'Yes' ? 'Yes' : 'No'}
                   </td>
-                  <td style={statusCellStyle(session.has_us_reading)}>
-                    {session.has_us_reading ? 'Yes' : 'No'}
+                  <td style={smrCellStyle(session.has_us_reading)}>
+                    {session.has_us_reading === 'SMR' ? 'Yes (SMR)' : session.has_us_reading === 'Yes' ? 'Yes' : 'No'}
                   </td>
                   <td style={statusCellStyle(session.has_biopsy)}>
                     {session.has_biopsy ? 'Yes' : 'No'}
@@ -240,14 +261,48 @@ const DoctorPage = ({ isEmbedded = false }) => {
               ))}
             </tbody>
           </table>
+          <div style={{ marginTop: 10, fontSize: 12, color: '#666', textAlign: 'right' }}>
+            <span style={{ color: '#0d6efd', fontWeight: 600 }}>SMR</span> — SonoMammogram Report
+          </div>
         </div>
-      )}
+
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 16 }}>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              style={{ ...paginationBtnStyle, opacity: currentPage === 1 ? 0.4 : 1 }}
+            >Prev</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+              .reduce((acc, p, idx, arr) => {
+                if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...');
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, i) =>
+                p === '...' ? <span key={`dot-${i}`} style={{ color: '#999', fontSize: 13 }}>...</span> :
+                <button
+                  key={p}
+                  onClick={() => setCurrentPage(p)}
+                  style={{ ...paginationBtnStyle, background: currentPage === p ? '#14868C' : '#fff', color: currentPage === p ? '#fff' : '#14868C', borderColor: currentPage === p ? '#14868C' : '#c8e0e2' }}
+                >{p}</button>
+              )}
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              style={{ ...paginationBtnStyle, opacity: currentPage === totalPages ? 0.4 : 1 }}
+            >Next</button>
+          </div>
+        )}
+        </>);
+      })()}
 
       {isModalOpen && selectedSession && (
         <div style={modalOverlayStyle} onClick={() => setIsModalOpen(false)}>
           <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
-              <h3>Responses for Patient ID: {selectedSession.id}</h3>
+              <h3>Responses for Subject ID: {selectedSession.id}</h3>
               <button style={closeButtonStyle} onClick={() => setIsModalOpen(false)}>&times;</button>
             </div>
             <div style={modalBodyStyle}>
@@ -337,6 +392,18 @@ const tableStyle = {
   marginTop: '10px'
 };
 
+const paginationBtnStyle = {
+  padding: '6px 14px',
+  borderRadius: 6,
+  border: '1px solid #c8e0e2',
+  background: '#fff',
+  color: '#14868C',
+  fontWeight: 600,
+  fontSize: 13,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
 const headerRowStyle = {
   backgroundColor: '#f8f9fa',
   borderBottom: '2px solid #dee2e6'
@@ -364,6 +431,15 @@ const sortableThStyle = {
   cursor: 'pointer',
   userSelect: 'none',
 };
+
+const smrCellStyle = (val) => ({
+  padding: '12px',
+  verticalAlign: 'middle',
+  textAlign: 'center',
+  color: val === 'SMR' ? '#0d6efd' : val === 'Yes' ? 'green' : 'red',
+  fontWeight: 'bold',
+  fontSize: val === 'SMR' ? 12 : 'inherit',
+});
 
 const statusCellStyle = (isTrue) => ({
   padding: '12px',

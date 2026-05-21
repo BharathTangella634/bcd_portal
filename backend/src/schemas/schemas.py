@@ -145,9 +145,9 @@ class PatientSessionListItem(BaseModel):
     risk_category: Optional[str] = None
     has_assessment: bool = False
     has_mammo_dicom: bool = False
-    has_mammo_reading: bool = False
-    has_us_video: bool = False
-    has_us_reading: bool = False
+    has_mammo_reading: Optional[str] = ""
+    has_us_video: Optional[str] = ""
+    has_us_reading: Optional[str] = ""
     has_biopsy: bool = False
     has_annotations: bool = False
 

@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { Upload } from 'lucide-react';
 
 const ResumableUpload = ({ label, hint, accept, fileType, sessionId, existing, onComplete }) => {
   const [file, setFile] = useState(null);
@@ -107,6 +108,7 @@ const ResumableUpload = ({ label, hint, accept, fileType, sessionId, existing, o
   };
 
   const hasExisting = !!existing;
+  const fileInputRef = useRef(null);
 
   return (
     <div style={{
@@ -127,28 +129,51 @@ const ResumableUpload = ({ label, hint, accept, fileType, sessionId, existing, o
       <div style={{ fontSize: 12, color: '#999', marginBottom: 8 }}>{hint}</div>
 
       <input
+        ref={fileInputRef}
         type="file"
         accept={accept}
         onChange={handleFileSelect}
         disabled={uploading}
-        style={{ fontSize: 12, marginBottom: 8, width: '100%' }}
+        style={{ display: 'none' }}
       />
 
+      {!file && !done && (
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            padding: '10px 16px', borderRadius: 8, width: '100%',
+            border: '1.5px solid #14868C', background: '#fff', color: '#14868C',
+            fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          <Upload size={15} />
+          Choose File
+        </button>
+      )}
+
       {file && !done && (
-        <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>
-          {file.name} ({fileSizeLabel(file.size)})
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px', background: '#f0fafb', borderRadius: 8, border: '1px solid #c8e0e2' }}>
+          <span style={{ flex: 1, fontSize: 12, color: '#333', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+          <span style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{fileSizeLabel(file.size)}</span>
+          <button type="button" onClick={() => { setFile(null); setProgress(0); }} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>&times;</button>
         </div>
       )}
 
       {file && !done && !uploading && (
         <button
+          type="button"
           onClick={upload}
           style={{
-            padding: '6px 16px', borderRadius: 8, border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            padding: '10px 16px', borderRadius: 8, border: 'none',
             background: '#14868C', color: '#fff', fontWeight: 600,
-            fontSize: 13, cursor: 'pointer', width: '100%',
+            fontSize: 13, cursor: 'pointer', width: '100%', fontFamily: 'inherit',
           }}
         >
+          <Upload size={15} />
           Upload
         </button>
       )}

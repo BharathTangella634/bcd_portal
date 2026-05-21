@@ -25,12 +25,20 @@ def _get_attachment_flags(assessment):
     if assessment:
         for att in assessment.attachments:
             att_types.add(att.file_type)
+
+    all_4_mammo = all(t in att_types for t in ('mammo_cc_left', 'mammo_cc_right', 'mammo_mlo_left', 'mammo_mlo_right'))
+    has_mammo_reading = 'mammo_reading' in att_types
+    has_us_video = 'us_video' in att_types
+    has_us_reading = 'us_reading' in att_types
+
+    smr = all_4_mammo and has_us_reading and not has_mammo_reading and not has_us_video
+
     return {
         "has_assessment": assessment is not None,
-        "has_mammo_dicom": any(t in att_types for t in ('mammo_dicom', 'mammo_cc_left', 'mammo_cc_right', 'mammo_mlo_left', 'mammo_mlo_right')),
-        "has_mammo_reading": 'mammo_reading' in att_types,
-        "has_us_video": 'us_video' in att_types,
-        "has_us_reading": 'us_reading' in att_types,
+        "has_mammo_dicom": all_4_mammo,
+        "has_mammo_reading": "SMR" if smr else ("Yes" if has_mammo_reading else ""),
+        "has_us_video": "SMR" if smr else ("Yes" if has_us_video else ""),
+        "has_us_reading": "SMR" if smr else ("Yes" if has_us_reading else ""),
         "has_biopsy": 'biopsy_reading' in att_types,
         "has_annotations": any(t.startswith('annot_') for t in att_types),
     }

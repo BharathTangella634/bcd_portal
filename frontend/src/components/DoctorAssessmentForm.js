@@ -267,9 +267,40 @@ const BreastPanel = ({ side, data, onChange }) => {
   return (
     <div>
       <div style={{ ...styles.sectionTitle, marginTop: 8 }}>
-        {sideLabel} Breast Composition
+        {sideLabel} Breast
       </div>
 
+      {/* BIRADS + Density at top (required) */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ ...styles.label, color: '#14868C', fontWeight: 600 }}>BIRADS Category <span style={{ color: '#dc3545' }}>*</span></label>
+          <select style={{ ...styles.select, borderColor: !data.birads ? '#dc3545' : '#d0d7de' }} value={data.birads || ''} onChange={(e) => { const v = e.target.value; onChange({ ...data, birads: v, birads_4_sub: v === '4' ? (data.birads_4_sub || '') : '' }); }}>
+            <option value="">Select BIRADS</option>
+            {BIRADS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        {data.birads === '4' && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ ...styles.label, color: '#14868C', fontWeight: 600 }}>BIRADS 4 Sub-category <span style={{ color: '#dc3545' }}>*</span></label>
+            <select style={styles.select} value={data.birads_4_sub || ''} onChange={(e) => set('birads_4_sub', e.target.value)}>
+              <option value="">Select sub-category</option>
+              {BIRADS_4_SUB.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        )}
+        <div>
+          <label style={{ ...styles.label, color: '#14868C', fontWeight: 600 }}>ACR Breast Density <span style={{ color: '#dc3545' }}>*</span></label>
+          <select style={{ ...styles.select, borderColor: !data.density ? '#dc3545' : '#d0d7de' }} value={data.density || ''} onChange={(e) => set('density', e.target.value)}>
+            <option value="">Select Density</option>
+            {DENSITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Composition */}
+      <div style={{ ...styles.sectionTitle, fontSize: 13, color: '#555', borderBottom: 'none', marginBottom: 8, marginTop: 4 }}>
+        Composition
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
         <Toggle label="Presence of any masses" checked={data.masses} onChange={(v) => set('masses', v)} />
         {data.masses && (
@@ -319,35 +350,9 @@ const BreastPanel = ({ side, data, onChange }) => {
         </div>
       )}
 
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 8 }}>
         <label style={styles.label}>Comments</label>
         <textarea style={{ ...styles.textarea, minHeight: 60 }} value={data.comments || ''} onChange={(e) => set('comments', e.target.value)} placeholder={`Additional comments for ${sideLabel.toLowerCase()} breast...`} />
-      </div>
-
-      <div style={styles.row}>
-        <div style={styles.field}>
-          <label style={styles.label}>BIRADS Category</label>
-          <select style={styles.select} value={data.birads} onChange={(e) => { set('birads', e.target.value); if (e.target.value !== '4') set('birads_4_sub', ''); }}>
-            <option value="">Select BIRADS</option>
-            {BIRADS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-        {data.birads === '4' && (
-          <div style={styles.field}>
-            <label style={styles.label}>BIRADS 4 Sub-category</label>
-            <select style={styles.select} value={data.birads_4_sub || ''} onChange={(e) => set('birads_4_sub', e.target.value)}>
-              <option value="">Select sub-category</option>
-              {BIRADS_4_SUB.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-        )}
-        <div style={styles.field}>
-          <label style={styles.label}>ACR Breast Density</label>
-          <select style={styles.select} value={data.density} onChange={(e) => set('density', e.target.value)}>
-            <option value="">Select Density</option>
-            {DENSITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
       </div>
     </div>
   );
@@ -418,6 +423,18 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const missing = [];
+    if (!rightBreast.birads) missing.push('Right Breast BIRADS');
+    if (!rightBreast.density) missing.push('Right Breast Density');
+    if (!leftBreast.birads) missing.push('Left Breast BIRADS');
+    if (!leftBreast.density) missing.push('Left Breast Density');
+
+    if (missing.length > 0) {
+      setMessage({ type: 'error', text: `Please fill required fields: ${missing.join(', ')}` });
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage({ type: '', text: '' });
 
