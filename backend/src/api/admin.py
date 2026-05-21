@@ -17,7 +17,7 @@ def check_admin_role(current_user: dict = Depends(get_current_user), db: Session
             detail="The user does not have enough privileges",
         )
     
-    # Check if the admin belongs to Test1 hospital for certain operations
+    # Check if the admin belongs to Test hospital for certain operations
     hospital_id = current_user.get("hospital_id")
     hospital = db.query(Hospital).filter(Hospital.id == hospital_id).first()
     if hospital:
@@ -26,10 +26,10 @@ def check_admin_role(current_user: dict = Depends(get_current_user), db: Session
     return current_user
 
 def check_super_admin(current_user: dict = Depends(check_admin_role)):
-    if current_user.get("hospital_name") != "Test1":
+    if current_user.get("hospital_name") != "Test":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This operation is only allowed for Test1 hospital admins",
+            detail="This operation is only allowed for Test hospital admins",
         )
     return current_user
 
@@ -74,10 +74,10 @@ def create_user(
     # If trying to create an Admin, only Test1 admin can do it
     role = db.query(Role).filter(Role.id == user_in.role_id).first()
     if role and role.name.lower() == 'admin':
-        if current_user.get("hospital_name") != "Test1":
+        if current_user.get("hospital_name") != "Test":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only Test1 hospital admins can create other admin accounts",
+                detail="Only Test hospital admins can create other admin accounts",
             )
 
     user = db.query(User).filter(User.email == user_in.email).first()

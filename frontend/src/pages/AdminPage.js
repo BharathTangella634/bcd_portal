@@ -458,7 +458,7 @@ const AdminContent = ({ hospitalName }) => {
       </div>
 
       {/* 3. Create another hospital account */}
-      {hospitalName === 'Test1' && (
+      {hospitalName === 'Test' && (
         <div style={accordionStyle}>
           <div style={accordionHeaderStyle} onClick={() => toggleSection('hospital')}>
             3. Create another hospital account
@@ -533,7 +533,7 @@ const AdminContent = ({ hospitalName }) => {
       )}
 
       {/* 4. Create admin account for another hospital */}
-      {hospitalName === 'Test1' && (
+      {hospitalName === 'Test' && (
         <div style={accordionStyle}>
           <div style={accordionHeaderStyle} onClick={() => toggleSection('admin-user')}>
             4. Create admin account for another hospital
