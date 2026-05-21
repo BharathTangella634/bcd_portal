@@ -4,6 +4,11 @@
 # Google Cloud Service Account Keys
 gcp-service-account.json
 
+# SSL Certificates
+server-ca.pem
+client-cert.pem
+client-key.pem
+
 # Python
 __pycache__/
 *.py[cod]
