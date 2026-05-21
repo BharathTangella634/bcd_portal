@@ -36,7 +36,7 @@ const LoginPage = () => {
 
     setLoginLoading(true);
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/auth/login`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/v1/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -87,7 +87,7 @@ const LoginPage = () => {
   useEffect(() => {
     const fetchHospitals = async () => {
       try {
-        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/auth/hospitals`);
+        const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/v1/auth/hospitals`);
         if (!response.ok) {
           throw new Error('Failed to fetch hospitals');
         }

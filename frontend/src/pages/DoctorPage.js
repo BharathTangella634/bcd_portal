@@ -33,7 +33,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
         setLoading(false);
         return;
       }
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+      const apiUrl = process.env.REACT_APP_API_URL || '';
       const sortQuery = sortParam || sortStack.map(s => `${s.key}:${s.dir}`).join(',');
       const response = await fetch(`${apiUrl}/api/v1/doctor/sessions?sort=${encodeURIComponent(sortQuery)}`, {
         headers: {
@@ -70,7 +70,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
         alert('Authentication token missing. Please log in again.');
         return;
       }
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+      const apiUrl = process.env.REACT_APP_API_URL || '';
       const response = await fetch(`${apiUrl}/api/v1/doctor/sessions/${sessionId}`, {
         headers: {
           'Authorization': `Bearer ${token}`

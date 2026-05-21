@@ -4,7 +4,7 @@ import Consent from '../components/Consent.jsx';
 import Questionnaire from '../components/Questionnaire.jsx';
 import ThankYou from '../components/ThankYou.jsx';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = process.env.REACT_APP_API_URL || '';
 
 const PublicQuestionnairePage = () => {
   const [step, setStep] = useState('consent');

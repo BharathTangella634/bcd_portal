@@ -150,7 +150,7 @@ function Consent({ onAccept }) {
       const token = localStorage.getItem('token');
 
       if (token) {
-        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+        const apiUrl = process.env.REACT_APP_API_URL || '';
         const formData = new FormData();
         if (scannedFile) {
           formData.append('file', scannedFile);

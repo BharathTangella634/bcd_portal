@@ -142,7 +142,7 @@ const AdminContent = ({ hospitalName }) => {
 
   const fetchHospitals = async () => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/auth/hospitals`);
+      const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/v1/auth/hospitals`);
       const contentType = response.headers.get("content-type");
       if (response.ok && contentType && contentType.indexOf("application/json") !== -1) {
         const data = await response.json();
@@ -166,7 +166,7 @@ const AdminContent = ({ hospitalName }) => {
   const fetchRoles = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/admin/roles`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/v1/admin/roles`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const contentType = response.headers.get("content-type");
@@ -203,7 +203,7 @@ const AdminContent = ({ hospitalName }) => {
       }
       
       const token = localStorage.getItem('token');
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/admin/users`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/v1/admin/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -246,7 +246,7 @@ const AdminContent = ({ hospitalName }) => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/admin/hospitals`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/v1/admin/hospitals`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

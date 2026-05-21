@@ -43,7 +43,7 @@ const PatientPage = ({ isEmbedded = false }) => {
 
     setIsSubmitting(true);
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+      const apiUrl = process.env.REACT_APP_API_URL || '';
       const token = localStorage.getItem('token');
       
       const response = await fetch(`${apiUrl}/api/v1/patient/questionnaire`, {
