@@ -28,8 +28,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         if email is None:
             raise credentials_exception
         
-        # Get user ID from DB if not in token
-        user = db.query(User).filter(User.email == email).first()
+        user = db.query(User).filter(User.email == email, User.hospital_id == hospital_id).first()
+        if not user:
+            user = db.query(User).filter(User.email == email).first()
         if not user:
             raise credentials_exception
             
