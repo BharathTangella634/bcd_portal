@@ -49,7 +49,7 @@ class HospitalBase(BaseModel):
     state: Optional[str] = None
 
 class HospitalCreate(HospitalBase):
-    pass
+    state: str
 
 class HospitalResponse(HospitalBase):
     id: str

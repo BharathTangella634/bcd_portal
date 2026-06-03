@@ -259,6 +259,14 @@ const AdminContent = ({ hospitalName }) => {
   };
 
   const handleCreateHospital = async () => {
+    if (!hospitalForm.name || !hospitalForm.contactPerson || !hospitalForm.email || !hospitalForm.state) {
+      alert('Error: Hospital Name, Contact Person, Email, and State are required.');
+      return;
+    }
+    if (!isValidEmail(hospitalForm.email)) {
+      alert('Error: Please enter a valid email address.');
+      return;
+    }
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
