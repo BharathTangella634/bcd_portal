@@ -10,6 +10,8 @@ const LoginPage = () => {
   const [loginLoading, setLoginLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const [showPassword, setShowPassword] = useState(false);
+
   // Form state
   const [formData, setFormData] = useState({
     hospitalName: '',
@@ -193,14 +195,17 @@ const LoginPage = () => {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label htmlFor="password">Password</label>
-              <input 
-                type="password" 
-                id="password" 
-                name="password" 
-                value={formData.password}
-                onChange={handleChange}
-                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} 
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  id="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '100%', boxSizing: 'border-box' }}
+                />
+                <span onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showPassword ? '🙈' : '👁️'}</span>
+              </div>
             </div>
             <button 
               type="submit" 

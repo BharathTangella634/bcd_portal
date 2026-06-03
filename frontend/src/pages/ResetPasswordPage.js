@@ -9,6 +9,9 @@ const ResetPasswordPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [formData, setFormData] = useState({
     hospitalName: '',
     role: '',
@@ -27,6 +30,11 @@ const ResetPasswordPage = () => {
 
     if (!formData.hospitalName || !formData.role || !formData.email || !formData.newPassword || !formData.confirmPassword) {
       toast.error('Please fill in all fields');
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      toast.error('Please enter a valid email address');
       return;
     }
 
@@ -133,11 +141,17 @@ const ResetPasswordPage = () => {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label htmlFor="newPassword">New Password</label>
-              <input type="password" id="newPassword" name="newPassword" value={formData.newPassword} onChange={handleChange} style={inputStyle} />
+              <div style={{ position: 'relative' }}>
+                <input type={showNewPassword ? 'text' : 'password'} id="newPassword" name="newPassword" value={formData.newPassword} onChange={handleChange} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
+                <span onClick={() => setShowNewPassword(!showNewPassword)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showNewPassword ? '🙈' : '👁️'}</span>
+              </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label htmlFor="confirmPassword">Confirm Password</label>
-              <input type="password" id="confirmPassword" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} style={inputStyle} />
+              <div style={{ position: 'relative' }}>
+                <input type={showConfirmPassword ? 'text' : 'password'} id="confirmPassword" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
+                <span onClick={() => setShowConfirmPassword(!showConfirmPassword)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showConfirmPassword ? '🙈' : '👁️'}</span>
+              </div>
             </div>
             <button
               type="submit"

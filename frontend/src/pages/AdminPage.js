@@ -189,9 +189,18 @@ const AdminContent = ({ hospitalName }) => {
     }
   };
 
+  const [showPasswords, setShowPasswords] = useState({});
+  const togglePasswordVisibility = (key) => setShowPasswords(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
   const handleCreateUser = async (formData, roleName) => {
     if (!Array.isArray(roles) || roles.length === 0) {
       alert("Error: Roles list is empty or not available. Please refresh the page and try again.");
+      return;
+    }
+    if (!isValidEmail(formData.email)) {
+      alert("Error: Please enter a valid email address.");
       return;
     }
     setLoading(true);
@@ -386,17 +395,20 @@ const AdminContent = ({ hospitalName }) => {
             </div>
             <div style={formGroupStyle}>
               <label style={labelStyle}>Password</label>
-              <input 
-                style={inputStyle} 
-                type="password" 
-                value={doctorForm.password}
-                onChange={(e) => setDoctorForm({...doctorForm, password: e.target.value})}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  style={inputStyle}
+                  type={showPasswords.doctor ? 'text' : 'password'}
+                  value={doctorForm.password}
+                  onChange={(e) => setDoctorForm({...doctorForm, password: e.target.value})}
+                />
+                <span onClick={() => togglePasswordVisibility('doctor')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showPasswords.doctor ? '🙈' : '👁️'}</span>
+              </div>
             </div>
             <div style={formGroupStyle}>
               <label style={labelStyle}>Hospital</label>
-              <select 
-                style={inputStyle} 
+              <select
+                style={inputStyle}
                 value={doctorForm.hospitalId}
                 onChange={(e) => setDoctorForm({...doctorForm, hospitalId: e.target.value})}
               >
@@ -404,8 +416,8 @@ const AdminContent = ({ hospitalName }) => {
                 {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </div>
-            <button 
-              style={{...buttonStyle, opacity: loading ? 0.7 : 1}} 
+            <button
+              style={{...buttonStyle, opacity: loading ? 0.7 : 1}}
               disabled={loading}
               onClick={() => handleCreateUser(doctorForm, 'Clinician')}
             >
@@ -442,17 +454,20 @@ const AdminContent = ({ hospitalName }) => {
             </div>
             <div style={formGroupStyle}>
               <label style={labelStyle}>Password</label>
-              <input 
-                style={inputStyle} 
-                type="password" 
-                value={staffForm.password}
-                onChange={(e) => setStaffForm({...staffForm, password: e.target.value})}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  style={inputStyle}
+                  type={showPasswords.staff ? 'text' : 'password'}
+                  value={staffForm.password}
+                  onChange={(e) => setStaffForm({...staffForm, password: e.target.value})}
+                />
+                <span onClick={() => togglePasswordVisibility('staff')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showPasswords.staff ? '🙈' : '👁️'}</span>
+              </div>
             </div>
             <div style={formGroupStyle}>
               <label style={labelStyle}>Hospital</label>
-              <select 
-                style={inputStyle} 
+              <select
+                style={inputStyle}
                 value={staffForm.hospitalId}
                 onChange={(e) => setStaffForm({...staffForm, hospitalId: e.target.value})}
               >
@@ -460,8 +475,8 @@ const AdminContent = ({ hospitalName }) => {
                 {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </div>
-            <button 
-              style={{...buttonStyle, opacity: loading ? 0.7 : 1}} 
+            <button
+              style={{...buttonStyle, opacity: loading ? 0.7 : 1}}
               disabled={loading}
               onClick={() => handleCreateUser(staffForm, 'Staff')}
             >
@@ -574,12 +589,15 @@ const AdminContent = ({ hospitalName }) => {
               </div>
               <div style={formGroupStyle}>
                 <label style={labelStyle}>Password</label>
-                <input 
-                  style={inputStyle} 
-                  type="password" 
-                  value={adminForm.password}
-                  onChange={(e) => setAdminForm({...adminForm, password: e.target.value})}
-                />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    style={inputStyle}
+                    type={showPasswords.admin ? 'text' : 'password'}
+                    value={adminForm.password}
+                    onChange={(e) => setAdminForm({...adminForm, password: e.target.value})}
+                  />
+                  <span onClick={() => togglePasswordVisibility('admin')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showPasswords.admin ? '🙈' : '👁️'}</span>
+                </div>
               </div>
               <div style={formGroupStyle}>
                 <label style={labelStyle}>Hospital</label>
