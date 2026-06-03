@@ -59,7 +59,9 @@ def create_hospital(
         name=hospital_in.name,
         contact_person=hospital_in.contact_person,
         email=hospital_in.email,
-        address=hospital_in.address
+        address=hospital_in.address,
+        pincode=hospital_in.pincode,
+        state=hospital_in.state
     )
     db.add(db_hospital)
     db.commit()
