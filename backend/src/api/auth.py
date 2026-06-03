@@ -6,6 +6,7 @@ from ..db.session import get_db
 from ..models.models import User, Hospital, Role
 from ..schemas.schemas import Token, LoginRequest, HospitalResponse, TokenData, ResetPasswordRequest
 from ..core.security import verify_password, create_access_token, get_password_hash
+from ..core.email import send_template_email
 from ..core.config import settings
 from typing import List
 
@@ -112,5 +113,15 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
 
     user.password_hash = get_password_hash(data.new_password)
     db.commit()
+
+    try:
+        send_template_email(db, "password_reset", data.email, {
+            "full_name": user.full_name or data.email,
+            "email": data.email,
+            "hospital_name": data.hospital_name,
+            "role_name": data.role,
+        })
+    except Exception:
+        pass
 
     return {"msg": "Password has been reset successfully"}

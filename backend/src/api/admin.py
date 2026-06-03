@@ -5,7 +5,7 @@ from ..db.session import get_db
 from ..models.models import User, Hospital, Role
 from ..schemas.schemas import UserCreate, HospitalCreate, User as UserSchema, HospitalResponse
 from ..core.security import get_password_hash
-from ..core.email import send_account_created_email
+from ..core.email import send_template_email
 from .auth import get_current_user
 
 router = APIRouter()
@@ -64,6 +64,17 @@ def create_hospital(
     db.add(db_hospital)
     db.commit()
     db.refresh(db_hospital)
+
+    try:
+        send_template_email(db, "hospital_added", hospital_in.email, {
+            "hospital_name": hospital_in.name,
+            "contact_person": hospital_in.contact_person,
+            "contact_email": hospital_in.email,
+            "address": hospital_in.address or "",
+        })
+    except Exception:
+        pass
+
     return db_hospital
 
 @router.post("/users", response_model=UserSchema)
@@ -117,13 +128,13 @@ def create_user(
     db.refresh(db_user)
 
     try:
-        send_account_created_email(
-            to_email=user_in.email,
-            full_name=user_in.full_name or "",
-            hospital_name=hospital.name,
-            role_name=role.name,
-            temp_password=user_in.password
-        )
+        send_template_email(db, "user_created", user_in.email, {
+            "full_name": user_in.full_name or user_in.email,
+            "email": user_in.email,
+            "hospital_name": hospital.name,
+            "role_name": role.name,
+            "temp_password": user_in.password,
+        })
     except Exception:
         pass
 
