@@ -55,6 +55,13 @@ class EmailTemplate(Base):
     created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
     updated_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
 
+class EmailTemplateCc(Base):
+    __tablename__ = "email_template_cc"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_key = Column(String(50), ForeignKey("email_templates.template_key", ondelete="CASCADE"), nullable=False)
+    cc_email = Column(String(255), nullable=False)
+
 class Language(Base):
     __tablename__ = "languages"
 
