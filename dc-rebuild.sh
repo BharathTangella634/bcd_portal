@@ -30,25 +30,22 @@ fi
 SERVICE=${1:-}
 
 set -x
-# Stop containers (service-specific if provided)
+# Stop and remove containers + volumes
 if [[ -n "$SERVICE" ]]; then
   docker compose stop "$SERVICE" || true
-else
-  docker compose stop || true
-fi
-
-# Remove stopped containers
-if [[ -n "$SERVICE" ]]; then
   docker compose rm -f "$SERVICE" || true
 else
-  docker compose rm -f || true
+  docker compose down --remove-orphans || true
 fi
 
-# Build images
+# Remove old/dangling images to free disk space
+docker image prune -f || true
+
+# Build fresh images (no cache)
 if [[ -n "$SERVICE" ]]; then
-  docker compose build "$SERVICE"
+  docker compose build --no-cache "$SERVICE"
 else
-  docker compose build
+  docker compose build --no-cache
 fi
 
 # Start containers in detached mode
@@ -57,6 +54,9 @@ if [[ -n "$SERVICE" ]]; then
 else
   docker compose up -d
 fi
+
+# Remove any leftover dangling images from the build
+docker image prune -f || true
 set +x
 
 # Redeploy Apache config
