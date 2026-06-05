@@ -22,7 +22,7 @@ body {
 
 .main-content > * {
   width: 100%;
-  max-width: clamp(300px, 70vw, 860px);
+  max-width: 90%;
 }
 
 .logos-container {
