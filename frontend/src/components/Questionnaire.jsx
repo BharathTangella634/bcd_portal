@@ -391,7 +391,7 @@ function Questionnaire({ onSubmit, isSubmitting, formStructure, questionnaireDat
               {renderedChildren}
             </div>
           )}
-        </div>
+        </React.Fragment>
       );
     });
   };
