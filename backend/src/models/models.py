@@ -13,6 +13,7 @@ class Hospital(Base):
 
     id = Column(String(20), primary_key=True, index=True)
     name = Column(String(255), nullable=False)
+    short_name = Column(String(20), nullable=True)
     contact_person = Column(String(50), nullable=False)
     email = Column(String(255), nullable=False, unique=True)
     address = Column(Text)

@@ -31,7 +31,9 @@ RISK_CASE = """
 
 @router.get("/")
 def get_stats(db: Session = Depends(get_questionnaire_db), app_db: Session = Depends(get_db)):
-    valid_hospitals = [h.name for h in app_db.query(Hospital.name).filter(Hospital.name != 'Test').all()]
+    hospital_rows = app_db.query(Hospital.name, Hospital.short_name).filter(Hospital.name != 'Test').all()
+    valid_hospitals = [h.name for h in hospital_rows]
+    hospital_short_names = {h.name: h.short_name or h.name for h in hospital_rows}
     if not valid_hospitals:
         return {"totalSubjects": 0, "institutionsEmpanelled": 0, "statesCount": 0,
                 "riskBins": [], "hospitalBins": [], "ageBins": [], "monthBins": []}
@@ -71,7 +73,7 @@ def get_stats(db: Session = Depends(get_questionnaire_db), app_db: Session = Dep
     """), params).fetchall()
 
     hospital_bins = [
-        {"name": r[0] or "Unknown", "no_risk": int(r[1] or 0), "low": int(r[2] or 0), "moderate": int(r[3] or 0), "high": int(r[4] or 0)}
+        {"name": hospital_short_names.get(r[0], r[0] or "Unknown"), "no_risk": int(r[1] or 0), "low": int(r[2] or 0), "moderate": int(r[3] or 0), "high": int(r[4] or 0)}
         for r in hosp_rows
     ]
 

@@ -42,6 +42,7 @@ class ResetPasswordRequest(BaseModel):
 
 class HospitalBase(BaseModel):
     name: str
+    short_name: Optional[str] = None
     contact_person: str
     email: EmailStr
     address: Optional[str] = None

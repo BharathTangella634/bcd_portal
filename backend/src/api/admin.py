@@ -57,6 +57,7 @@ def create_hospital(
     db_hospital = Hospital(
         id=new_id,
         name=hospital_in.name,
+        short_name=hospital_in.short_name,
         contact_person=hospital_in.contact_person,
         email=hospital_in.email,
         address=hospital_in.address,
