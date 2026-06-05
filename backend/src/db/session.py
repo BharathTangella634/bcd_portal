@@ -43,7 +43,14 @@ def _build_connector_engine(db_name):
             enable_iam_auth=True,
         )
 
-    return create_engine("mysql+pymysql://", creator=getconn)
+    return create_engine(
+        "mysql+pymysql://",
+        creator=getconn,
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+    )
 
 
 def _build_direct_engine(db_name):
@@ -70,7 +77,14 @@ def _build_direct_engine(db_name):
     if settings.MYSQL_QUERY:
         url += f"?{settings.MYSQL_QUERY}"
 
-    return create_engine(url, connect_args=connect_args)
+    return create_engine(
+        url,
+        connect_args=connect_args,
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+    )
 
 
 # Clinician DB (bcd_application2)
