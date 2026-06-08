@@ -16,4 +16,12 @@ root.render(
   <App />
 );
 
-serviceWorkerRegistration.register();
+serviceWorkerRegistration.register({
+  onUpdate: (registration) => {
+    if (registration.waiting) {
+      registration.waiting.addEventListener('statechange', (e) => {
+        if (e.target.state === 'activated') window.location.reload();
+      });
+    }
+  },
+});
