@@ -139,6 +139,7 @@ class DoctorAssessmentResponse(BaseModel):
     doctor_case_notes: Optional[str] = None
     created_at: datetime.datetime
     attachments: List[AttachmentResponse] = []
+    upload_warnings: Optional[List[str]] = None
 
     class Config:
         from_attributes = True

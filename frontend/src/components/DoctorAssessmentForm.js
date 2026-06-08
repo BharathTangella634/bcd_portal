@@ -168,30 +168,6 @@ const styles = {
     fontWeight: 700,
     flexShrink: 0,
   }),
-  uploadZone: {
-    border: '2px dashed #c8e0e2',
-    borderRadius: 12,
-    padding: '20px 16px',
-    textAlign: 'center',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    background: '#fafefe',
-    position: 'relative',
-  },
-  uploadLabel: {
-    fontSize: 13,
-    color: '#14868C',
-    fontWeight: 600,
-    marginBottom: 4,
-  },
-  uploadHint: {
-    fontSize: 12,
-    color: '#999',
-  },
-  uploadHasFile: {
-    borderColor: '#14868C',
-    background: '#e8f7f8',
-  },
   submitBtn: {
     width: '100%',
     padding: '14px 24px',
@@ -236,29 +212,6 @@ const Toggle = ({ label, checked, onChange }) => (
     <span>{label}</span>
   </div>
 );
-
-const UploadSlot = ({ label, hint, accept, name, file, existing, onChange, onConvert }) => {
-  const hasFile = !!file;
-  const hasExisting = !!existing;
-  return (
-    <div style={{ ...styles.uploadZone, ...(hasFile || hasExisting ? styles.uploadHasFile : {}) }}>
-      <div style={styles.uploadLabel}>{label}</div>
-      {hasExisting && !hasFile && (
-        <div style={{ fontSize: 12, color: '#14868C', marginBottom: 6 }}>
-          Existing: {existing.file_name}
-        </div>
-      )}
-      {hasFile && <div style={{ fontSize: 12, color: '#0e6a6f', marginBottom: 6 }}>{file.name}</div>}
-      <div style={styles.uploadHint}>{hint}</div>
-      <input
-        type="file"
-        accept={accept}
-        onChange={(e) => onChange(name, e.target.files[0])}
-        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
-      />
-    </div>
-  );
-};
 
 const BreastPanel = ({ side, data, onChange }) => {
   const set = (key, val) => onChange({ ...data, [key]: val });
@@ -376,21 +329,6 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
   const [doctorRiskClass, setDoctorRiskClass] = useState('');
   const [doctorCaseNotes, setDoctorCaseNotes] = useState('');
 
-  const [files, setFiles] = useState({
-    mammo_cc_left: null,
-    mammo_cc_right: null,
-    mammo_mlo_left: null,
-    mammo_mlo_right: null,
-    mammo_reading: null,
-    us_video: null,
-    us_reading: null,
-    biopsy_doc: null,
-    annot_cc_left: null,
-    annot_cc_right: null,
-    annot_mlo_left: null,
-    annot_mlo_right: null,
-  });
-
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -415,10 +353,6 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
   const getAttachmentByType = (type) => {
     if (!initialData || !initialData.attachments) return null;
     return initialData.attachments.find(a => a.file_type === type);
-  };
-
-  const handleFileChange = (name, file) => {
-    setFiles(prev => ({ ...prev, [name]: file }));
   };
 
   const handleSubmit = async (e) => {
@@ -456,10 +390,6 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
     submitData.append('doctor_risk_class', doctorRiskClass);
     submitData.append('doctor_case_notes', doctorCaseNotes);
 
-    Object.entries(files).forEach(([key, file]) => {
-      if (file) submitData.append(key, file);
-    });
-
     try {
       const token = localStorage.getItem('token');
       const apiUrl = process.env.REACT_APP_API_URL || '';
@@ -470,7 +400,12 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
       });
 
       if (response.ok) {
-        setMessage({ type: 'success', text: 'Assessment saved successfully!' });
+        const data = await response.json();
+        if (data.upload_warnings && data.upload_warnings.length > 0) {
+          setMessage({ type: 'warning', text: `Assessment saved. Some files failed to upload: ${data.upload_warnings.join('; ')}` });
+        } else {
+          setMessage({ type: 'success', text: 'Assessment saved successfully!' });
+        }
         if (onSaveSuccess) onSaveSuccess();
       } else {
         const errorData = await response.json();
@@ -566,10 +501,10 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
         <div style={styles.card}>
           <div style={styles.cardHeader}>
             <span style={styles.cardHeaderIcon}>&#128248;</span> Mammogram Views
-            {(files.mammo_cc_right || getAttachmentByType('mammo_cc_right')) &&
-             (files.mammo_cc_left || getAttachmentByType('mammo_cc_left')) &&
-             (files.mammo_mlo_right || getAttachmentByType('mammo_mlo_right')) &&
-             (files.mammo_mlo_left || getAttachmentByType('mammo_mlo_left')) && (
+            {getAttachmentByType('mammo_cc_right') &&
+             getAttachmentByType('mammo_cc_left') &&
+             getAttachmentByType('mammo_mlo_right') &&
+             getAttachmentByType('mammo_mlo_left') && (
               <span style={{ marginLeft: 'auto', background: '#d4edda', color: '#155724', padding: '4px 12px', borderRadius: 12, fontSize: 13, fontWeight: 600 }}>
                 &#10003; All DICOMs uploaded
               </span>
@@ -610,7 +545,7 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
           </div>
           <div style={{ ...styles.cardBody, borderTop: '2px solid #e8f4f5' }}>
             <label style={styles.label}>Mammography Report</label>
-            <UploadSlot label="Upload Mammography Report" hint=".pdf" accept=".pdf,image/*" name="mammo_reading" file={files.mammo_reading} existing={getAttachmentByType('mammo_reading')} onChange={handleFileChange} />
+            <ResumableUpload label="Upload Mammography Report" hint=".pdf (up to 25MB)" accept=".pdf,image/*" fileType="mammo_reading" sessionId={sessionId} existing={getAttachmentByType('mammo_reading')} />
           </div>
         </div>
 
@@ -622,8 +557,8 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
           <div style={styles.cardBody}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
               <ResumableUpload label="Sonogram" hint=".dcm / .jpg (up to 100MB)" accept=".dcm,image/*,video/*" fileType="us_video" sessionId={sessionId} existing={getAttachmentByType('us_video')} />
-              <UploadSlot label="Sonogram Report" hint=".pdf (up to 25MB)" accept=".pdf,image/*" name="us_reading" file={files.us_reading} existing={getAttachmentByType('us_reading')} onChange={handleFileChange} />
-              <UploadSlot label="Biopsy Report" hint=".pdf (up to 25MB)" accept=".pdf,image/*" name="biopsy_doc" file={files.biopsy_doc} existing={getAttachmentByType('biopsy_reading')} onChange={handleFileChange} />
+              <ResumableUpload label="Sonogram Report" hint=".pdf (up to 25MB)" accept=".pdf,image/*" fileType="us_reading" sessionId={sessionId} existing={getAttachmentByType('us_reading')} />
+              <ResumableUpload label="Biopsy Report" hint=".pdf (up to 25MB)" accept=".pdf,image/*" fileType="biopsy_reading" sessionId={sessionId} existing={getAttachmentByType('biopsy_reading')} />
             </div>
           </div>
         </div>
@@ -675,9 +610,9 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
             padding: 14,
             marginBottom: 16,
             borderRadius: 10,
-            backgroundColor: message.type === 'success' ? '#d4edda' : '#f8d7da',
-            color: message.type === 'success' ? '#155724' : '#721c24',
-            border: `1px solid ${message.type === 'success' ? '#c3e6cb' : '#f5c6cb'}`,
+            backgroundColor: message.type === 'success' ? '#d4edda' : message.type === 'warning' ? '#fff3cd' : '#f8d7da',
+            color: message.type === 'success' ? '#155724' : message.type === 'warning' ? '#856404' : '#721c24',
+            border: `1px solid ${message.type === 'success' ? '#c3e6cb' : message.type === 'warning' ? '#ffc107' : '#f5c6cb'}`,
             fontWeight: 500,
           }}>
             {message.text}

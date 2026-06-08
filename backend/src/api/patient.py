@@ -337,6 +337,7 @@ async def create_doctor_assessment(
     q_db: Session = Depends(get_questionnaire_db),
     current_user: dict = Depends(get_current_user)
 ):
+    # Phase 1: Save assessment data (always persisted, even if file uploads fail)
     try:
         hospital_id = current_user.get("hospital_id")
         doctor_id = current_user.get("id")
@@ -345,7 +346,6 @@ async def create_doctor_assessment(
         if not hospital_id or not doctor_id:
             raise HTTPException(status_code=400, detail="User hospital ID or doctor ID not found")
 
-        # Verify session exists in bcd_questionnaire
         from sqlalchemy import text as sql_text
         session_row = q_db.execute(sql_text(
             "SELECT session_id FROM session_table WHERE session_id = :sid"
@@ -353,18 +353,16 @@ async def create_doctor_assessment(
 
         if not session_row:
             raise HTTPException(status_code=404, detail="Patient session not found")
-            
-        # Check if assessment already exists
+
         assessment = db.query(DoctorAssessment).filter(
             DoctorAssessment.patient_session_id == patient_session_id
         ).first()
 
         if assessment:
-            # Check permissions: original doctor or hospital admin
             is_admin = user_role.lower() == 'admin'
             if assessment.doctor_id != doctor_id and not is_admin:
                 raise HTTPException(status_code=403, detail="Not authorized to edit this assessment")
-            
+
             assessment.questionnaire_feedback = questionnaire_feedback
             assessment.is_questionnaire_correct = is_questionnaire_correct
             assessment.mammo_birads = mammo_birads
@@ -398,12 +396,26 @@ async def create_doctor_assessment(
                 doctor_case_notes=doctor_case_notes,
             )
             db.add(assessment)
-            db.flush() # Get assessment ID
-        
-        ist_now = get_ist_now()
-        timestamp = ist_now.strftime("%Y%m%d_%H%M%S")
-        
-        async def handle_upload(file: UploadFile, file_type: str, replace: bool = False, seq=None):
+
+        db.commit()
+        db.refresh(assessment)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error saving doctor assessment: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not save doctor assessment: {str(e)}"
+        )
+
+    # Phase 2: Upload files (failures are non-fatal — assessment data is already saved)
+    upload_warnings = []
+    ist_now = get_ist_now()
+
+    async def handle_upload(file: UploadFile, file_type: str, replace: bool = False, seq=None):
+        try:
             if replace:
                 db.query(Attachment).filter(
                     Attachment.assessment_id == assessment.id,
@@ -413,7 +425,7 @@ async def create_doctor_assessment(
             content = await file.read()
             destination_blob_name = build_blob_path(hospital_id, patient_session_id, file_type, file.filename, ist_now, seq=seq)
             gcs_url = upload_to_gcs(content, destination_blob_name)
-            
+
             attachment = Attachment(
                 assessment_id=assessment.id,
                 file_type=file_type,
@@ -422,50 +434,34 @@ async def create_doctor_assessment(
                 mime_type=file.content_type
             )
             db.add(attachment)
-            return attachment
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"File upload failed for {file_type}: {e}")
+            upload_warnings.append(f"Failed to upload {file_type}: {str(e)}")
 
-        for idx, dicom_file in enumerate(mammo_dicom, start=1):
-            if dicom_file.filename:
-                await handle_upload(dicom_file, "mammo_dicom", replace=False, seq=idx)
+    file_uploads = []
+    for idx, dicom_file in enumerate(mammo_dicom, start=1):
+        if dicom_file.filename:
+            file_uploads.append((dicom_file, "mammo_dicom", False, idx))
 
-        if mammo_cc_left and mammo_cc_left.filename:
-            await handle_upload(mammo_cc_left, "mammo_cc_left", replace=True)
-        if mammo_cc_right and mammo_cc_right.filename:
-            await handle_upload(mammo_cc_right, "mammo_cc_right", replace=True)
-        if mammo_mlo_left and mammo_mlo_left.filename:
-            await handle_upload(mammo_mlo_left, "mammo_mlo_left", replace=True)
-        if mammo_mlo_right and mammo_mlo_right.filename:
-            await handle_upload(mammo_mlo_right, "mammo_mlo_right", replace=True)
+    for file_obj, file_type in [
+        (mammo_cc_left, "mammo_cc_left"), (mammo_cc_right, "mammo_cc_right"),
+        (mammo_mlo_left, "mammo_mlo_left"), (mammo_mlo_right, "mammo_mlo_right"),
+        (mammo_reading, "mammo_reading"), (us_video, "us_video"),
+        (us_reading, "us_reading"), (annot_cc_left, "annot_cc_left"),
+        (annot_cc_right, "annot_cc_right"), (annot_mlo_left, "annot_mlo_left"),
+        (annot_mlo_right, "annot_mlo_right"),
+    ]:
+        if file_obj and file_obj.filename:
+            file_uploads.append((file_obj, file_type, True, None))
 
-        if mammo_reading and mammo_reading.filename:
-            await handle_upload(mammo_reading, "mammo_reading", replace=True)
-        
-        if us_video and us_video.filename:
-            await handle_upload(us_video, "us_video", replace=True)
-            
-        if us_reading and us_reading.filename:
-            await handle_upload(us_reading, "us_reading", replace=True)
-            
-        if biopsy_doc and biopsy_doc.filename:
-            await handle_upload(biopsy_doc, "biopsy_reading", replace=True)
+    if biopsy_doc and biopsy_doc.filename:
+        file_uploads.append((biopsy_doc, "biopsy_reading", True, None))
 
-        if annot_cc_left and annot_cc_left.filename:
-            await handle_upload(annot_cc_left, "annot_cc_left", replace=True)
-        if annot_cc_right and annot_cc_right.filename:
-            await handle_upload(annot_cc_right, "annot_cc_right", replace=True)
-        if annot_mlo_left and annot_mlo_left.filename:
-            await handle_upload(annot_mlo_left, "annot_mlo_left", replace=True)
-        if annot_mlo_right and annot_mlo_right.filename:
-            await handle_upload(annot_mlo_right, "annot_mlo_right", replace=True)
+    for file_obj, file_type, replace, seq in file_uploads:
+        await handle_upload(file_obj, file_type, replace=replace, seq=seq)
 
-        db.commit()
-        db.refresh(assessment)
-        return assessment
-
-    except Exception as e:
-        print(f"Error saving doctor assessment: {e}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Could not save doctor assessment: {str(e)}"
-        )
+    db.refresh(assessment)
+    assessment.upload_warnings = upload_warnings if upload_warnings else None
+    return assessment

@@ -509,8 +509,8 @@ class TestAssessmentWithFileUpload:
         assert res.status_code == 200
         assert res.json()["recommendation_followup"] == "Routine screening"
 
-    def test_gcs_failure_returns_500(self, client, seed_hospital_and_user):
-        """If GCS upload fails, the endpoint should return 500."""
+    def test_gcs_failure_saves_assessment_with_warnings(self, client, seed_hospital_and_user):
+        """If GCS upload fails, the assessment data should still be saved with upload warnings."""
         session_id = _start_questionnaire_session(client)
         token = _clinician_token()
 
@@ -521,8 +521,44 @@ class TestAssessmentWithFileUpload:
                 files={"mammo_cc_left": _make_fake_dicom("cc_left.dcm")},
                 headers={"Authorization": f"Bearer {token}"},
             )
-            assert res.status_code == 500
-            assert "GCS unavailable" in res.json()["detail"]
+            assert res.status_code == 200
+            resp_data = res.json()
+            assert resp_data["recommendation_followup"] == "Routine screening"
+            assert resp_data["upload_warnings"] is not None
+            assert any("GCS unavailable" in w for w in resp_data["upload_warnings"])
+
+    def test_partial_gcs_failure_saves_successful_uploads(self, client, seed_hospital_and_user):
+        """Some uploads succeed, some fail — assessment and successful uploads are saved."""
+        session_id = _start_questionnaire_session(client)
+        token = _clinician_token()
+
+        call_count = 0
+        original_upload = MagicMock(return_value="gs://test-bucket/fake.dcm")
+
+        def fail_second_call(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise Exception("GCS timeout")
+            return original_upload(*args, **kwargs)
+
+        with patch("backend.src.api.patient.upload_to_gcs", side_effect=fail_second_call):
+            data = self._base_assessment_data(session_id)
+            files = {
+                "mammo_cc_left": _make_fake_dicom("cc_left.dcm"),
+                "mammo_cc_right": _make_fake_dicom("cc_right.dcm"),
+            }
+            res = client.post("/api/v1/patient/assessment",
+                data=data, files=files,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert res.status_code == 200
+            resp_data = res.json()
+            assert resp_data["recommendation_followup"] == "Routine screening"
+            atts = resp_data.get("attachments", [])
+            assert any(a["file_type"] == "mammo_cc_left" for a in atts)
+            assert resp_data["upload_warnings"] is not None
+            assert len(resp_data["upload_warnings"]) == 1
 
     def test_assessment_unauthorized(self, client):
         res = client.post("/api/v1/patient/assessment",
