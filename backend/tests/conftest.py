@@ -35,16 +35,17 @@ def override_get_questionnaire_db():
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_databases():
-    from backend.src.models.models import PatientResponse
-    for col in PatientResponse.__table__.columns:
-        if col.name == 'updated_at' and col.server_default is not None:
-            col.server_default = None
+    from backend.src.models.models import PatientResponse, EmailTemplate
+    for model in [PatientResponse, EmailTemplate]:
+        for col in model.__table__.columns:
+            if col.name == 'updated_at' and col.server_default is not None:
+                col.server_default = None
 
     Base.metadata.create_all(bind=engine)
 
     from sqlalchemy import text
     conn = q_engine.connect()
-    conn.execute(text("CREATE TABLE IF NOT EXISTS session_table (session_id TEXT PRIMARY KEY, ip_address TEXT, session_start_time TEXT, session_end_time TEXT, snehita_lifetime_risk TEXT)"))
+    conn.execute(text("CREATE TABLE IF NOT EXISTS session_table (session_id TEXT PRIMARY KEY, ip_address TEXT, session_start_time TEXT, session_end_time TEXT, snehita_lifetime_risk TEXT, risk_category TEXT)"))
     conn.execute(text("CREATE TABLE IF NOT EXISTS session_data_table (session_data_id TEXT PRIMARY KEY, session_id TEXT, question TEXT, answer TEXT, created_by TEXT, created_at TEXT)"))
     conn.commit()
     conn.close()
