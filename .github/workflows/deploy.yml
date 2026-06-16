@@ -77,6 +77,7 @@ jobs:
         with:
           instance_name: ${{ env.VM_INSTANCE }}
           zone: ${{ env.VM_ZONE }}
+          user: ashwinrajkumar
           ssh_private_key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
           command: |
             cd ~/bcd_portal
