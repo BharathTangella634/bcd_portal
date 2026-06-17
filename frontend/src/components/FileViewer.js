@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCcw, Loader } from 'lucide-react';
 import dicomParser from 'dicom-parser';
+import mammoth from 'mammoth';
 
 const FILE_TYPE_LABELS = {
   mammo_cc_left: 'CC Left',
@@ -39,6 +40,7 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
   const displayLabel = getDisplayLabel(fileTypeKey, fileName);
   const [blobUrl, setBlobUrl] = useState(null);
   const [dicomBuffer, setDicomBuffer] = useState(null);
+  const [docxHtml, setDocxHtml] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [zoom, setZoom] = useState(1);
@@ -67,6 +69,10 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
         if (fileType === 'dicom') {
           const arrayBuffer = await res.arrayBuffer();
           setDicomBuffer(arrayBuffer);
+        } else if (fileType === 'docx') {
+          const arrayBuffer = await res.arrayBuffer();
+          const result = await mammoth.convertToHtml({ arrayBuffer });
+          setDocxHtml(result.value);
         } else {
           const blob = await res.blob();
           setBlobUrl(URL.createObjectURL(blob));
@@ -89,10 +95,52 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
 
     try {
       const byteArray = new Uint8Array(dicomBuffer);
+
+      // Detect non-DICOM files mislabeled with .dcm extension
+      if (byteArray[0] === 0xFF && byteArray[1] === 0xD8) {
+        setBlobUrl(URL.createObjectURL(new Blob([dicomBuffer], { type: 'image/jpeg' })));
+        setDicomBuffer(null);
+        return;
+      }
+      if (byteArray[0] === 0x89 && byteArray[1] === 0x50) {
+        setBlobUrl(URL.createObjectURL(new Blob([dicomBuffer], { type: 'image/png' })));
+        setDicomBuffer(null);
+        return;
+      }
+
       const dataSet = dicomParser.parseDicom(byteArray);
 
+      const pixelDataElement = dataSet.elements.x7fe00010;
+      if (!pixelDataElement) throw new Error('No pixel data found in DICOM file');
+
+      // Handle compressed/encapsulated pixel data (JPEG, JPEG2000, etc.)
+      if (pixelDataElement.encapsulatedPixelData) {
+        const fragments = pixelDataElement.fragments;
+        if (!fragments || fragments.length === 0) throw new Error('No pixel data fragments in compressed DICOM');
+
+        let totalLen = 0;
+        fragments.forEach(f => { totalLen += f.length; });
+        const frameData = new Uint8Array(totalLen);
+        let pos = 0;
+        fragments.forEach(f => {
+          frameData.set(byteArray.slice(f.position, f.position + f.length), pos);
+          pos += f.length;
+        });
+
+        const transferSyntax = dataSet.string('x00020010') || '';
+        const isJp2 = transferSyntax.includes('1.2.840.10008.1.2.4.90') || transferSyntax.includes('1.2.840.10008.1.2.4.91');
+        const mime = isJp2 ? 'image/jp2' : 'image/jpeg';
+
+        setBlobUrl(URL.createObjectURL(new Blob([frameData], { type: mime })));
+        setDicomBuffer(null);
+        return;
+      }
+
+      // Uncompressed pixel data — render to canvas
       const rows = dataSet.uint16('x00280010');
       const cols = dataSet.uint16('x00280011');
+      if (!rows || !cols) throw new Error('Invalid DICOM dimensions');
+
       const bitsAllocated = dataSet.uint16('x00280100') || 16;
       const bitsStored = dataSet.uint16('x00280101') || bitsAllocated;
       const pixelRepresentation = dataSet.uint16('x00280103') || 0;
@@ -104,8 +152,13 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
       const windowCenter = wcStr ? parseFloat(wcStr.split('\\')[0]) : (1 << (bitsStored - 1));
       const windowWidth = wwStr ? parseFloat(wwStr.split('\\')[0]) : (1 << bitsStored);
 
-      const pixelDataElement = dataSet.elements.x7fe00010;
-      if (!pixelDataElement) throw new Error('No pixel data found in DICOM file');
+      const offset = pixelDataElement.dataOffset;
+      const buf = dataSet.byteArray.buffer;
+      const bytesPerPixel = bitsAllocated === 16 ? 2 : 1;
+      const expectedSize = rows * cols * (samplesPerPixel === 3 ? 3 : bytesPerPixel);
+      if (offset + expectedSize > buf.byteLength) {
+        throw new Error('Pixel data truncated or corrupted');
+      }
 
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -113,9 +166,6 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
       canvas.height = rows;
       const ctx = canvas.getContext('2d');
       const imageData = ctx.createImageData(cols, rows);
-
-      const offset = pixelDataElement.dataOffset;
-      const buf = dataSet.byteArray.buffer;
 
       if (samplesPerPixel === 3) {
         for (let i = 0; i < rows * cols; i++) {
@@ -174,7 +224,7 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
   }, []);
 
   const handleMouseDown = (e) => {
-    if (fileType === 'pdf') return;
+    if (fileType === 'pdf' || fileType === 'docx') return;
     setDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
@@ -233,7 +283,7 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
             />
           )}
 
-          {!loading && !error && blobUrl && fileType === 'image' && (
+          {!loading && !error && blobUrl && (fileType === 'image' || fileType === 'dicom') && (
             <div style={{
               width: '100%', height: '100%',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -274,6 +324,23 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
             </div>
           )}
 
+          {!loading && !error && docxHtml && fileType === 'docx' && (
+            <div style={{
+              width: '100%', height: '100%', overflow: 'auto',
+              background: '#fff', padding: '40px 60px',
+              boxSizing: 'border-box',
+            }}>
+              <div
+                dangerouslySetInnerHTML={{ __html: docxHtml }}
+                style={{
+                  maxWidth: 800, margin: '0 auto',
+                  fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
+                  fontSize: 14, lineHeight: 1.7, color: '#222',
+                }}
+              />
+            </div>
+          )}
+
           {!loading && !error && blobUrl && fileType === 'unknown' && (
             <div style={styles.center}>
               <div style={{ color: '#666', fontSize: 14, textAlign: 'center' }}>
@@ -293,6 +360,7 @@ function getFileType(fileName, mimeType) {
   const ext = (fileName || '').split('.').pop().toLowerCase();
   if (ext === 'dcm' || mimeType === 'application/dicom') return 'dicom';
   if (ext === 'pdf' || mimeType === 'application/pdf') return 'pdf';
+  if (['doc', 'docx'].includes(ext) || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
   if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext) || (mimeType && mimeType.startsWith('image/'))) return 'image';
   return 'unknown';
 }
