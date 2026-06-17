@@ -93,7 +93,8 @@ def get_patient_sessions(
     app_db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    is_super_viewer = current_user.get("is_super_viewer", False)
+    is_super_viewer = current_user.get("is_super_viewer", False) or \
+        current_user.get("email", "").lower().endswith("@tanuh.ai")
     order_clause = _build_order_clause(sort)
 
     if is_super_viewer:
