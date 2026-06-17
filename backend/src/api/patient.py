@@ -150,9 +150,13 @@ def get_view_url(
     if not gcs_url or not gcs_url.startswith("gs://"):
         raise HTTPException(status_code=400, detail="Invalid storage URL")
 
-    blob_path = "/".join(gcs_url.split("/")[3:])
+    parts = gcs_url.split("/")
+    stored_bucket = parts[2] if len(parts) > 2 else None
+    blob_path = "/".join(parts[3:])
+
+    use_bucket = stored_bucket or settings.GCP_STORAGE_BUCKET
     client = _get_storage_client()
-    bucket = client.bucket(settings.GCP_STORAGE_BUCKET)
+    bucket = client.bucket(use_bucket)
     blob = bucket.blob(blob_path)
 
     signed_url = blob.generate_signed_url(
@@ -203,13 +207,20 @@ def view_file(
     if not gcs_url or not gcs_url.startswith("gs://"):
         raise HTTPException(status_code=400, detail="Invalid storage URL")
 
-    blob_path = "/".join(gcs_url.split("/")[3:])
+    parts = gcs_url.split("/")
+    stored_bucket = parts[2] if len(parts) > 2 else None
+    blob_path = "/".join(parts[3:])
+
+    use_bucket = stored_bucket or settings.GCP_STORAGE_BUCKET
     client = _get_storage_client()
-    bucket = client.bucket(settings.GCP_STORAGE_BUCKET)
+    bucket = client.bucket(use_bucket)
     blob = bucket.blob(blob_path)
 
     if not blob.exists():
-        raise HTTPException(status_code=404, detail="File not found in storage")
+        raise HTTPException(
+            status_code=404,
+            detail=f"File not found in storage (bucket={use_bucket}, path={blob_path})"
+        )
 
     content = blob.download_as_bytes()
     mime = attachment.mime_type or "application/octet-stream"
