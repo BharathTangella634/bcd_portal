@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status, Form
 from sqlalchemy.orm import Session, joinedload
 from ..db.session import get_db, get_questionnaire_db
 from ..models.models import PatientSession, Question, QuestionTranslation, QuestionOption, QuestionOptionTranslation, PatientResponse, DoctorAssessment, Attachment
@@ -86,6 +86,7 @@ def _get_storage_client():
 
 @router.post("/upload-url")
 def generate_upload_url(
+    request: Request,
     file_type: str = Form(...),
     file_name: str = Form(...),
     session_id: str = Form(...),
@@ -101,6 +102,8 @@ def generate_upload_url(
     ist_now = get_ist_now()
     blob_path = build_blob_path(hospital_id, session_id, file_type, file_name, ist_now)
 
+    origin = request.headers.get("origin", "")
+
     try:
         client = _get_storage_client()
         bucket = client.bucket(settings.GCP_STORAGE_BUCKET)
@@ -108,6 +111,7 @@ def generate_upload_url(
 
         upload_url = blob.create_resumable_upload_session(
             content_type="application/octet-stream",
+            origin=origin,
         )
     except Exception as e:
         print(f"Failed to create upload session: {e}")
