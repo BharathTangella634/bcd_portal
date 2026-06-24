@@ -236,6 +236,29 @@ def view_file(
     content = blob.download_as_bytes()
     mime = attachment.mime_type or "application/octet-stream"
 
+    if len(content) >= 132 and content[128:132] == b'DICM':
+        try:
+            import pydicom
+            import io
+
+            ds = pydicom.dcmread(io.BytesIO(content))
+            transfer_syntax = ds.file_meta.TransferSyntaxUID
+
+            is_compressed = transfer_syntax not in (
+                "1.2.840.10008.1.2",
+                "1.2.840.10008.1.2.1",
+                "1.2.840.10008.1.2.2",
+            )
+            if is_compressed:
+                ds.decompress()
+                ds.file_meta.TransferSyntaxUID = "1.2.840.10008.1.2"
+                out_buf = io.BytesIO()
+                ds.save_as(out_buf)
+                content = out_buf.getvalue()
+                mime = "application/dicom"
+        except Exception:
+            pass
+
     return Response(
         content=content,
         media_type=mime,

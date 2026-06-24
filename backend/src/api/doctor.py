@@ -55,6 +55,70 @@ def _get_attachment_flags(assessment):
     }
 
 
+@router.get("/hospital-summary")
+def get_hospital_summary(
+    q_db: Session = Depends(get_questionnaire_db),
+    app_db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    is_super_viewer = current_user.get("is_super_viewer", False) or \
+        current_user.get("email", "").lower().endswith("@tanuh.ai")
+    if not is_super_viewer:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    hospitals = app_db.query(Hospital).filter(
+        ~Hospital.name.in_(('Test', 'Tanuh Foundation'))
+    ).order_by(Hospital.name).all()
+    if not hospitals:
+        return []
+
+    valid_names = [h.name for h in hospitals]
+    params = {"inst_questions": INSTITUTE_QUESTIONS, "valid_names": tuple(valid_names)}
+
+    session_hosp_rows = q_db.execute(text("""
+        SELECT s.session_id, sd_inst.answer AS hospital_name
+        FROM session_table s
+        JOIN (
+            SELECT session_id, MIN(answer) AS answer
+            FROM session_data_table
+            WHERE question IN :inst_questions
+              AND answer IN :valid_names
+            GROUP BY session_id
+        ) sd_inst ON s.session_id = sd_inst.session_id
+        WHERE s.snehita_lifetime_risk IS NOT NULL
+    """), params).fetchall()
+
+    subject_counts = {}
+    hospital_by_session = {}
+    for row in session_hosp_rows:
+        sid, hname = row[0], row[1]
+        subject_counts[hname] = subject_counts.get(hname, 0) + 1
+        hospital_by_session[sid] = hname
+
+    assessment_counts = {}
+    all_ids = list(hospital_by_session.keys())
+    if all_ids:
+        assessed_rows = app_db.query(DoctorAssessment.patient_session_id).filter(
+            DoctorAssessment.patient_session_id.in_(all_ids)
+        ).all()
+        for r in assessed_rows:
+            hname = hospital_by_session.get(r[0])
+            if hname:
+                assessment_counts[hname] = assessment_counts.get(hname, 0) + 1
+
+    result = []
+    for h in hospitals:
+        result.append({
+            "hospital_name": h.name,
+            "short_name": h.short_name,
+            "state": h.state,
+            "subject_count": subject_counts.get(h.name, 0),
+            "assessment_count": assessment_counts.get(h.name, 0),
+        })
+
+    return result
+
+
 SORT_COLUMN_MAP = {
     "date": "s.session_start_time",
     "risk": "FIELD(s.risk_category, 'Baseline Risk', 'Evident Risk', 'Significant Risk', 'High Risk')",
@@ -89,6 +153,7 @@ def _build_order_clause(sort_param):
 @router.get("/sessions", response_model=List[PatientSessionListItem])
 def get_patient_sessions(
     sort: str = None,
+    hospital_name: str = None,
     q_db: Session = Depends(get_questionnaire_db),
     app_db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
@@ -98,12 +163,15 @@ def get_patient_sessions(
     order_clause = _build_order_clause(sort)
 
     if is_super_viewer:
-        valid_names = [
-            h.name for h in
-            app_db.query(Hospital.name).filter(
-                ~Hospital.name.in_(('Test', 'Tanuh Foundation'))
-            ).all()
-        ]
+        if hospital_name:
+            valid_names = [hospital_name]
+        else:
+            valid_names = [
+                h.name for h in
+                app_db.query(Hospital.name).filter(
+                    ~Hospital.name.in_(('Test', 'Tanuh Foundation'))
+                ).all()
+            ]
         if not valid_names:
             return []
 

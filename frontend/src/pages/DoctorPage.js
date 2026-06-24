@@ -15,6 +15,8 @@ const DoctorPage = ({ isEmbedded = false }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedInstitutions, setExpandedInstitutions] = useState({});
   const [institutionPages, setInstitutionPages] = useState({});
+  const [hospitalSummary, setHospitalSummary] = useState([]);
+  const [selectedHospital, setSelectedHospital] = useState(null);
   const PAGE_SIZE = 20;
   const isSuperViewer = localStorage.getItem('isSuperViewer') === 'true';
 
@@ -35,10 +37,50 @@ const DoctorPage = ({ isEmbedded = false }) => {
         return;
       }
     }
-    fetchSessions();
+    if (isSuperViewer) {
+      fetchHospitalSummary();
+    } else {
+      fetchSessions();
+    }
   }, [navigate, isEmbedded]);
 
-  const fetchSessions = async (sortParam) => {
+  const fetchHospitalSummary = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      if (!token) { setError('Authentication token missing.'); setLoading(false); return; }
+      const apiUrl = process.env.REACT_APP_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/v1/doctor/hospital-summary`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        setHospitalSummary(await response.json());
+      } else {
+        setError('Failed to fetch hospital summary');
+      }
+    } catch (err) {
+      setError('An error occurred while fetching hospital summary');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectHospital = (hospitalName) => {
+    setSelectedHospital(hospitalName);
+    setSearchTerm('');
+    setCurrentPage(1);
+    fetchSessions(null, hospitalName);
+  };
+
+  const handleBackToSummary = () => {
+    setSelectedHospital(null);
+    setSessions([]);
+    setSearchTerm('');
+    setCurrentPage(1);
+  };
+
+  const fetchSessions = async (sortParam, hospitalNameParam) => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
@@ -49,7 +91,10 @@ const DoctorPage = ({ isEmbedded = false }) => {
       }
       const apiUrl = process.env.REACT_APP_API_URL || '';
       const sortQuery = sortParam || sortStack.map(s => `${s.key}:${s.dir}`).join(',');
-      const response = await fetch(`${apiUrl}/api/v1/doctor/sessions?sort=${encodeURIComponent(sortQuery)}`, {
+      const hospFilter = hospitalNameParam || selectedHospital;
+      let url = `${apiUrl}/api/v1/doctor/sessions?sort=${encodeURIComponent(sortQuery)}`;
+      if (hospFilter) url += `&hospital_name=${encodeURIComponent(hospFilter)}`;
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -278,11 +323,92 @@ const DoctorPage = ({ isEmbedded = false }) => {
     );
   };
 
+  const renderHospitalSummary = () => {
+    const totalSubjects = hospitalSummary.reduce((sum, h) => sum + h.subject_count, 0);
+    const totalAssessments = hospitalSummary.reduce((sum, h) => sum + h.assessment_count, 0);
+
+    const filtered = hospitalSummary.filter(h => {
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return h.hospital_name.toLowerCase().includes(term)
+        || (h.short_name || '').toLowerCase().includes(term)
+        || (h.state || '').toLowerCase().includes(term);
+    });
+
+    return (
+      <>
+        <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div style={summaryCardStyle}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#14868C' }}>{hospitalSummary.length}</div>
+            <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>Institutions</div>
+          </div>
+          <div style={summaryCardStyle}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#14868C' }}>{totalSubjects}</div>
+            <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>Total Subjects</div>
+          </div>
+          <div style={summaryCardStyle}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#14868C' }}>{totalAssessments}</div>
+            <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>Total Assessments</div>
+          </div>
+        </div>
+        <div style={tableContainerStyle}>
+          <table style={tableStyle}>
+            <thead>
+              <tr style={headerRowStyle}>
+                <th style={thStyle}>Institution</th>
+                <th style={thCenterStyle}>State</th>
+                <th style={thCenterStyle}>Subjects</th>
+                <th style={thCenterStyle}>Assessments</th>
+                <th style={thCenterStyle}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((h) => (
+                <tr key={h.hospital_name} style={{ ...rowStyle, cursor: 'pointer' }} onClick={() => handleSelectHospital(h.hospital_name)}>
+                  <td style={tdStyle}>
+                    <div style={{ fontWeight: 600, color: '#333' }}>{h.hospital_name}</div>
+                    {h.short_name && <div style={{ fontSize: 12, color: '#888' }}>{h.short_name}</div>}
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'center', fontSize: 13 }}>{h.state || '-'}</td>
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
+                    <span style={accordionBadgeStyle('#e8f7f8', '#14868C')}>
+                      {h.subject_count}
+                    </span>
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
+                    <span style={accordionBadgeStyle(h.assessment_count > 0 ? '#e6f9e6' : '#fef2f2', h.assessment_count > 0 ? '#16a34a' : '#dc2626')}>
+                      {h.assessment_count}
+                    </span>
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
+                    <button onClick={(e) => { e.stopPropagation(); handleSelectHospital(h.hospital_name); }} style={linkButtonStyle}>
+                      View Subjects
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan="5" style={{ ...tdStyle, textAlign: 'center', color: '#888' }}>No institutions match "{searchTerm}".</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  };
+
   const content = (
     <div style={contentStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <h2 style={{ color: '#333', margin: 0 }}>Subject List</h2>
+          {isSuperViewer && selectedHospital && (
+            <button onClick={handleBackToSummary} style={{ ...accordionToggleBtnStyle, marginRight: 4 }}>
+              ← Back
+            </button>
+          )}
+          <h2 style={{ color: '#333', margin: 0 }}>
+            {isSuperViewer && !selectedHospital ? 'Institution Summary' : selectedHospital ? `Subjects — ${selectedHospital}` : 'Subject List'}
+          </h2>
           {!isSuperViewer && sortStack.map((s, i) => (
             <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, backgroundColor: '#e8f7f8', color: '#14868C', fontWeight: 600 }}>
               {s.key}{s.dir === 'asc' ? '↑' : '↓'}
@@ -295,105 +421,35 @@ const DoctorPage = ({ isEmbedded = false }) => {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isSuperViewer && (
-            <>
-              <button
-                onClick={() => {
-                  const allNames = [...new Set(sessions.map(s => s.hospital_name || 'Unknown'))];
-                  const allExpanded = {};
-                  allNames.forEach(n => { allExpanded[n] = true; });
-                  setExpandedInstitutions(allExpanded);
-                }}
-                style={{ ...accordionToggleBtnStyle }}
-              >Expand All</button>
-              <button
-                onClick={() => setExpandedInstitutions({})}
-                style={{ ...accordionToggleBtnStyle }}
-              >Collapse All</button>
-            </>
-          )}
           <input
             type="text"
-            placeholder={isSuperViewer ? 'Search by Subject ID or Institution...' : 'Search by Subject ID...'}
+            placeholder={isSuperViewer && !selectedHospital ? 'Search by Institution or State...' : 'Search by Subject ID...'}
             value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); setInstitutionPages({}); }}
+            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
             style={{ width: 260, padding: '8px 14px', borderRadius: 8, border: '1.5px solid #c8e0e2', fontSize: 13, outline: 'none', fontFamily: 'inherit' }}
           />
         </div>
       </div>
 
-      {loading && <p>Loading sessions...</p>}
+      {loading && <p>Loading...</p>}
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
+      {!loading && !error && isSuperViewer && !selectedHospital && renderHospitalSummary()}
+
       {(() => {
+        if (isSuperViewer && !selectedHospital) return null;
+
         const filtered = sessions.filter(s => {
           if (!searchTerm) return true;
           const term = searchTerm.toLowerCase();
           return (s.patient_id || '').toLowerCase().includes(term)
-            || (s.id || '').toLowerCase().includes(term)
-            || (isSuperViewer && (s.hospital_name || '').toLowerCase().includes(term));
+            || (s.id || '').toLowerCase().includes(term);
         });
 
         if (!loading && !error && sessions.length === 0) return <p>No sessions found.</p>;
         if (!loading && !error && filtered.length === 0) return <p>No subjects match "{searchTerm}".</p>;
 
-        if (!loading && !error && filtered.length > 0 && isSuperViewer) {
-          const grouped = {};
-          filtered.forEach(s => {
-            const key = s.hospital_name || 'Unknown';
-            if (!grouped[key]) grouped[key] = [];
-            grouped[key].push(s);
-          });
-          const institutionNames = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
-
-          return (
-            <>
-              <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>
-                {institutionNames.length} institution{institutionNames.length !== 1 ? 's' : ''}, {filtered.length} total subjects
-                {searchTerm && ` (filtered from ${sessions.length})`}
-              </div>
-              {institutionNames.map(instName => {
-                const instSessions = grouped[instName];
-                const assessmentCount = instSessions.filter(s => s.has_assessment).length;
-                const isExpanded = expandedInstitutions[instName] || false;
-                const instPage = institutionPages[instName] || 1;
-                const paginated = instSessions.slice((instPage - 1) * PAGE_SIZE, instPage * PAGE_SIZE);
-
-                return (
-                  <div key={instName} style={accordionCardStyle}>
-                    <div
-                      style={accordionHeaderStyle}
-                      onClick={() => toggleInstitution(instName)}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span style={{ fontSize: 16, color: '#14868C', width: 20, textAlign: 'center' }}>
-                          {isExpanded ? '▼' : '▶'}
-                        </span>
-                        <span style={{ fontSize: 15, fontWeight: 600, color: '#333' }}>{instName}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={accordionBadgeStyle('#e8f7f8', '#14868C')}>
-                          {instSessions.length} subject{instSessions.length !== 1 ? 's' : ''}
-                        </span>
-                        <span style={accordionBadgeStyle(assessmentCount > 0 ? '#e6f9e6' : '#fef2f2', assessmentCount > 0 ? '#16a34a' : '#dc2626')}>
-                          {assessmentCount} assessment{assessmentCount !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                    </div>
-                    {isExpanded && (
-                      <div style={{ padding: '0 16px 16px' }}>
-                        {renderSessionTable(paginated, false)}
-                        {renderPagination(instSessions.length, instPage, (p) => setInstitutionPage(instName, p))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </>
-          );
-        }
-
-        if (!loading && !error && filtered.length > 0 && !isSuperViewer) {
+        if (!loading && !error && filtered.length > 0) {
           const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
           const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
@@ -522,6 +578,16 @@ const contentStyle = {
   backgroundColor: '#fff',
   padding: '20px',
   minHeight: '400px',
+};
+
+const summaryCardStyle = {
+  flex: '1 1 140px',
+  padding: '16px 20px',
+  borderRadius: 10,
+  border: '1px solid #e0e7eb',
+  backgroundColor: '#f8fafb',
+  textAlign: 'center',
+  minWidth: 120,
 };
 
 const tableContainerStyle = {
