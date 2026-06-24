@@ -83,10 +83,21 @@ jobs:
             set -e
             cd ~/bcd_portal
             git pull --rebase origin main
-            gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml down
+            docker compose -f docker-compose.prod.yml down --remove-orphans
+            docker build --no-cache \
+              -t ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/backend:latest \
+              -f backend/Dockerfile .
+            docker build --no-cache \
+              --build-arg REACT_APP_API_URL="" \
+              --build-arg REACT_APP_WEBSITE_URL="${{ steps.secrets.outputs.REACT_APP_WEBSITE_URL }}" \
+              --build-arg REACT_APP_LINKEDIN_URL="${{ steps.secrets.outputs.REACT_APP_LINKEDIN_URL }}" \
+              --build-arg REACT_APP_TWITTER_URL="${{ steps.secrets.outputs.REACT_APP_TWITTER_URL }}" \
+              --build-arg REACT_APP_YOUTUBE_URL="${{ steps.secrets.outputs.REACT_APP_YOUTUBE_URL }}" \
+              --build-arg REACT_APP_MIXPANEL_TOKEN="${{ steps.secrets.outputs.REACT_APP_MIXPANEL_TOKEN }}" \
+              -t ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/frontend:latest \
+              -f frontend/Dockerfile frontend
             docker compose -f docker-compose.prod.yml up -d
-            docker image prune -f
+            docker container prune -f
+            docker image prune -af
             sleep 10
             curl -sf http://localhost:8000/api/health

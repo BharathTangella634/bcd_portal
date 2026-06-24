@@ -16,12 +16,32 @@ const DoctorPage = ({ isEmbedded = false }) => {
   const [expandedInstitutions, setExpandedInstitutions] = useState({});
   const [institutionPages, setInstitutionPages] = useState({});
   const [hospitalSummary, setHospitalSummary] = useState([]);
-  const [selectedHospital, setSelectedHospital] = useState(null);
+  const [hospitalSessions, setHospitalSessions] = useState({});
+  const [hospitalSessionsLoading, setHospitalSessionsLoading] = useState({});
   const PAGE_SIZE = 20;
   const isSuperViewer = localStorage.getItem('isSuperViewer') === 'true';
 
   const toggleInstitution = (name) => {
-    setExpandedInstitutions(prev => ({ ...prev, [name]: !prev[name] }));
+    setExpandedInstitutions(prev => {
+      const nowExpanded = !prev[name];
+      if (nowExpanded && !hospitalSessions[name]) {
+        fetchHospitalSessions(name);
+      }
+      return { ...prev, [name]: nowExpanded };
+    });
+  };
+
+  const expandAll = () => {
+    const allExpanded = {};
+    hospitalSummary.forEach(h => { allExpanded[h.hospital_name] = true; });
+    setExpandedInstitutions(allExpanded);
+    hospitalSummary.forEach(h => {
+      if (!hospitalSessions[h.hospital_name]) fetchHospitalSessions(h.hospital_name);
+    });
+  };
+
+  const collapseAll = () => {
+    setExpandedInstitutions({});
   };
 
   const setInstitutionPage = (name, page) => {
@@ -66,21 +86,29 @@ const DoctorPage = ({ isEmbedded = false }) => {
     }
   };
 
-  const handleSelectHospital = (hospitalName) => {
-    setSelectedHospital(hospitalName);
-    setSearchTerm('');
-    setCurrentPage(1);
-    fetchSessions(null, hospitalName);
+  const fetchHospitalSessions = async (hospitalName) => {
+    try {
+      setHospitalSessionsLoading(prev => ({ ...prev, [hospitalName]: true }));
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const apiUrl = process.env.REACT_APP_API_URL || '';
+      const sortQuery = sortStack.map(s => `${s.key}:${s.dir}`).join(',');
+      const response = await fetch(
+        `${apiUrl}/api/v1/doctor/sessions?sort=${encodeURIComponent(sortQuery)}&hospital_name=${encodeURIComponent(hospitalName)}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setHospitalSessions(prev => ({ ...prev, [hospitalName]: data }));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setHospitalSessionsLoading(prev => ({ ...prev, [hospitalName]: false }));
+    }
   };
 
-  const handleBackToSummary = () => {
-    setSelectedHospital(null);
-    setSessions([]);
-    setSearchTerm('');
-    setCurrentPage(1);
-  };
-
-  const fetchSessions = async (sortParam, hospitalNameParam) => {
+  const fetchSessions = async (sortParam) => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
@@ -91,9 +119,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
       }
       const apiUrl = process.env.REACT_APP_API_URL || '';
       const sortQuery = sortParam || sortStack.map(s => `${s.key}:${s.dir}`).join(',');
-      const hospFilter = hospitalNameParam || selectedHospital;
       let url = `${apiUrl}/api/v1/doctor/sessions?sort=${encodeURIComponent(sortQuery)}`;
-      if (hospFilter) url += `&hospital_name=${encodeURIComponent(hospFilter)}`;
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -325,7 +351,6 @@ const DoctorPage = ({ isEmbedded = false }) => {
 
   const renderHospitalSummary = () => {
     const totalSubjects = hospitalSummary.reduce((sum, h) => sum + h.subject_count, 0);
-    const totalAssessments = hospitalSummary.reduce((sum, h) => sum + h.assessment_count, 0);
 
     const filtered = hospitalSummary.filter(h => {
       if (!searchTerm) return true;
@@ -337,62 +362,57 @@ const DoctorPage = ({ isEmbedded = false }) => {
 
     return (
       <>
-        <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-          <div style={summaryCardStyle}>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#14868C' }}>{hospitalSummary.length}</div>
-            <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>Institutions</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ fontSize: 13, color: '#888' }}>
+            {filtered.length} institution{filtered.length !== 1 ? 's' : ''}, {totalSubjects} total subjects
           </div>
-          <div style={summaryCardStyle}>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#14868C' }}>{totalSubjects}</div>
-            <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>Total Subjects</div>
-          </div>
-          <div style={summaryCardStyle}>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#14868C' }}>{totalAssessments}</div>
-            <div style={{ fontSize: 13, color: '#666', marginTop: 2 }}>Total Assessments</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={expandAll} style={accordionToggleBtnStyle}>Expand All</button>
+            <button onClick={collapseAll} style={accordionToggleBtnStyle}>Collapse All</button>
           </div>
         </div>
-        <div style={tableContainerStyle}>
-          <table style={tableStyle}>
-            <thead>
-              <tr style={headerRowStyle}>
-                <th style={thStyle}>Institution</th>
-                <th style={thCenterStyle}>State</th>
-                <th style={thCenterStyle}>Subjects</th>
-                <th style={thCenterStyle}>Assessments</th>
-                <th style={thCenterStyle}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((h) => (
-                <tr key={h.hospital_name} style={{ ...rowStyle, cursor: 'pointer' }} onClick={() => handleSelectHospital(h.hospital_name)}>
-                  <td style={tdStyle}>
-                    <div style={{ fontWeight: 600, color: '#333' }}>{h.hospital_name}</div>
-                    {h.short_name && <div style={{ fontSize: 12, color: '#888' }}>{h.short_name}</div>}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'center', fontSize: 13 }}>{h.state || '-'}</td>
-                  <td style={{ ...tdStyle, textAlign: 'center' }}>
-                    <span style={accordionBadgeStyle('#e8f7f8', '#14868C')}>
-                      {h.subject_count}
-                    </span>
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'center' }}>
-                    <span style={accordionBadgeStyle(h.assessment_count > 0 ? '#e6f9e6' : '#fef2f2', h.assessment_count > 0 ? '#16a34a' : '#dc2626')}>
-                      {h.assessment_count}
-                    </span>
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'center' }}>
-                    <button onClick={(e) => { e.stopPropagation(); handleSelectHospital(h.hospital_name); }} style={linkButtonStyle}>
-                      View Subjects
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan="5" style={{ ...tdStyle, textAlign: 'center', color: '#888' }}>No institutions match "{searchTerm}".</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {filtered.map((h) => (
+          <div key={h.hospital_name} style={accordionCardStyle}>
+            <div style={accordionHeaderStyle} onClick={() => toggleInstitution(h.hospital_name)}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 14, color: '#14868C', transition: 'transform 0.2s', display: 'inline-block', transform: expandedInstitutions[h.hospital_name] ? 'rotate(90deg)' : 'rotate(0deg)' }}>&#9654;</span>
+                <span style={{ fontWeight: 600, color: '#333', fontSize: 14 }}>{h.hospital_name}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <span style={accordionBadgeStyle('#e8f7f8', '#14868C')}>
+                  {h.subject_count} subject{h.subject_count !== 1 ? 's' : ''}
+                </span>
+                <span style={accordionBadgeStyle(h.assessment_count > 0 ? '#e6f9e6' : '#fef2f2', h.assessment_count > 0 ? '#16a34a' : '#dc2626')}>
+                  {h.assessment_count} assessment{h.assessment_count !== 1 ? 's' : ''}
+                </span>
+              </div>
+            </div>
+            {expandedInstitutions[h.hospital_name] && (
+              <div style={{ padding: '12px 16px' }}>
+                {hospitalSessionsLoading[h.hospital_name] && <p style={{ fontSize: 13, color: '#888' }}>Loading sessions...</p>}
+                {hospitalSessions[h.hospital_name] && hospitalSessions[h.hospital_name].length === 0 && (
+                  <p style={{ fontSize: 13, color: '#888' }}>No sessions found for this institution.</p>
+                )}
+                {hospitalSessions[h.hospital_name] && hospitalSessions[h.hospital_name].length > 0 && (() => {
+                  const instSessions = hospitalSessions[h.hospital_name];
+                  const instPage = institutionPages[h.hospital_name] || 1;
+                  const totalPages = Math.ceil(instSessions.length / PAGE_SIZE);
+                  const paginated = instSessions.slice((instPage - 1) * PAGE_SIZE, instPage * PAGE_SIZE);
+                  return (
+                    <>
+                      <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>{instSessions.length} subject{instSessions.length !== 1 ? 's' : ''}</div>
+                      {renderSessionTable(paginated, false)}
+                      {renderPagination(instSessions.length, instPage, (p) => setInstitutionPage(h.hospital_name, p))}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        ))}
+        {filtered.length === 0 && (
+          <p style={{ color: '#888', textAlign: 'center', marginTop: 20 }}>No institutions match "{searchTerm}".</p>
+        )}
       </>
     );
   };
@@ -401,14 +421,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
     <div style={contentStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {isSuperViewer && selectedHospital && (
-            <button onClick={handleBackToSummary} style={{ ...accordionToggleBtnStyle, marginRight: 4 }}>
-              ← Back
-            </button>
-          )}
-          <h2 style={{ color: '#333', margin: 0 }}>
-            {isSuperViewer && !selectedHospital ? 'Institution Summary' : selectedHospital ? `Subjects — ${selectedHospital}` : 'Subject List'}
-          </h2>
+          <h2 style={{ color: '#333', margin: 0 }}>Subject List</h2>
           {!isSuperViewer && sortStack.map((s, i) => (
             <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, backgroundColor: '#e8f7f8', color: '#14868C', fontWeight: 600 }}>
               {s.key}{s.dir === 'asc' ? '↑' : '↓'}
@@ -423,7 +436,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             type="text"
-            placeholder={isSuperViewer && !selectedHospital ? 'Search by Institution or State...' : 'Search by Subject ID...'}
+            placeholder={isSuperViewer ? 'Search by Subject ID or Institution...' : 'Search by Subject ID...'}
             value={searchTerm}
             onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
             style={{ width: 260, padding: '8px 14px', borderRadius: 8, border: '1.5px solid #c8e0e2', fontSize: 13, outline: 'none', fontFamily: 'inherit' }}
@@ -434,10 +447,10 @@ const DoctorPage = ({ isEmbedded = false }) => {
       {loading && <p>Loading...</p>}
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
-      {!loading && !error && isSuperViewer && !selectedHospital && renderHospitalSummary()}
+      {!loading && !error && isSuperViewer && renderHospitalSummary()}
 
       {(() => {
-        if (isSuperViewer && !selectedHospital) return null;
+        if (isSuperViewer) return null;
 
         const filtered = sessions.filter(s => {
           if (!searchTerm) return true;
@@ -578,16 +591,6 @@ const contentStyle = {
   backgroundColor: '#fff',
   padding: '20px',
   minHeight: '400px',
-};
-
-const summaryCardStyle = {
-  flex: '1 1 140px',
-  padding: '16px 20px',
-  borderRadius: 10,
-  border: '1px solid #e0e7eb',
-  backgroundColor: '#f8fafb',
-  textAlign: 'center',
-  minWidth: 120,
 };
 
 const tableContainerStyle = {
