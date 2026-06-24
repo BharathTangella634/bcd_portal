@@ -47,11 +47,12 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [resolvedFileType, setResolvedFileType] = useState(null);
 
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
-  const fileType = getFileType(fileName, mimeType);
+  const fileType = resolvedFileType || getFileType(fileName, mimeType, fileTypeKey);
 
   useEffect(() => {
     const fetchFile = async () => {
@@ -66,10 +67,15 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
           throw new Error(detail || `Server error (${res.status})`);
         }
 
-        if (fileType === 'dicom') {
+        const contentType = res.headers.get('content-type') || '';
+        let effectiveType = getFileType(fileName, mimeType, fileTypeKey);
+        if (contentType.includes('application/dicom')) effectiveType = 'dicom';
+        setResolvedFileType(effectiveType);
+
+        if (effectiveType === 'dicom') {
           const arrayBuffer = await res.arrayBuffer();
           setDicomBuffer(arrayBuffer);
-        } else if (fileType === 'docx') {
+        } else if (effectiveType === 'docx') {
           const arrayBuffer = await res.arrayBuffer();
           const result = await mammoth.convertToHtml({ arrayBuffer });
           setDocxHtml(result.value);
@@ -356,12 +362,13 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
   );
 };
 
-function getFileType(fileName, mimeType) {
+function getFileType(fileName, mimeType, fileTypeKey) {
   const ext = (fileName || '').split('.').pop().toLowerCase();
-  if (ext === 'dcm' || mimeType === 'application/dicom') return 'dicom';
+  if (['dcm', 'dicom'].includes(ext) || mimeType === 'application/dicom') return 'dicom';
   if (ext === 'pdf' || mimeType === 'application/pdf') return 'pdf';
   if (['doc', 'docx'].includes(ext) || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
   if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext) || (mimeType && mimeType.startsWith('image/'))) return 'image';
+  if (fileTypeKey && (fileTypeKey.startsWith('mammo_cc') || fileTypeKey.startsWith('mammo_mlo'))) return 'dicom';
   return 'unknown';
 }
 

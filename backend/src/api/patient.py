@@ -237,6 +237,7 @@ def view_file(
     mime = attachment.mime_type or "application/octet-stream"
 
     if len(content) >= 132 and content[128:132] == b'DICM':
+        mime = "application/dicom"
         try:
             import pydicom
             import io
@@ -255,7 +256,6 @@ def view_file(
                 out_buf = io.BytesIO()
                 ds.save_as(out_buf)
                 content = out_buf.getvalue()
-                mime = "application/dicom"
         except Exception:
             pass
 
