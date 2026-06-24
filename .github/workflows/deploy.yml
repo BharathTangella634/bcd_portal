@@ -82,6 +82,8 @@ jobs:
           command: |
             set -e
             cd ~/bcd_portal
+            git checkout -- . 2>/dev/null || true
+            git clean -fd 2>/dev/null || true
             git pull --rebase origin main
             docker compose -f docker-compose.prod.yml down --remove-orphans
             docker build --no-cache \
