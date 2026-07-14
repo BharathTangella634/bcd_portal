@@ -6,12 +6,18 @@ from ..schemas.schemas import QuestionResponse, QuestionOptionResponse, Question
 from ..core.config import settings
 from .auth import get_current_user
 from google.cloud import storage
+from google.auth import default as auth_default, impersonated_credentials
 from typing import List, Optional
 import uuid
 import datetime
 import pytz
 import json
 import time
+import logging
+
+logger = logging.getLogger(__name__)
+
+_SA_EMAIL = "tanuh-bcd-portal@bcd-prototypes.iam.gserviceaccount.com"
 
 router = APIRouter()
 
@@ -170,11 +176,26 @@ def get_view_url(
     bucket = client.bucket(use_bucket)
     blob = bucket.blob(blob_path)
 
-    signed_url = blob.generate_signed_url(
-        version="v4",
-        expiration=datetime.timedelta(hours=1),
-        method="GET",
-    )
+    try:
+        credentials, _ = auth_default()
+        if not hasattr(credentials, 'sign_bytes'):
+            signing_creds = impersonated_credentials.Credentials(
+                source_credentials=credentials,
+                target_principal=_SA_EMAIL,
+                target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+        else:
+            signing_creds = credentials
+
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(hours=1),
+            method="GET",
+            credentials=signing_creds,
+        )
+    except Exception as e:
+        logger.warning("Signed URL generation failed: %s", e)
+        raise HTTPException(status_code=500, detail="Could not generate signed URL")
 
     return {
         "view_url": signed_url,
