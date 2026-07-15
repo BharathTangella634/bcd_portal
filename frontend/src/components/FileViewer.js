@@ -59,17 +59,36 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
       try {
         const token = localStorage.getItem('token');
         const apiUrl = process.env.REACT_APP_API_URL || '';
-        const res = await fetch(`${apiUrl}/api/v1/patient/view-file/${attachmentId}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          const detail = await res.text().catch(() => '');
-          throw new Error(detail || `Server error (${res.status})`);
+
+        let res;
+        let effectiveType = getFileType(fileName, mimeType, fileTypeKey);
+
+        // Try signed URL first (direct GCS download, faster)
+        try {
+          const urlRes = await fetch(`${apiUrl}/api/v1/patient/view-url/${attachmentId}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (urlRes.ok) {
+            const { view_url, mime_type: serverMime } = await urlRes.json();
+            if (serverMime && serverMime.includes('dicom')) effectiveType = 'dicom';
+            res = await fetch(view_url);
+            if (!res.ok) throw new Error('Signed URL fetch failed');
+          } else {
+            throw new Error('view-url not available');
+          }
+        } catch {
+          // Fallback to proxied download through backend
+          res = await fetch(`${apiUrl}/api/v1/patient/view-file/${attachmentId}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (!res.ok) {
+            const detail = await res.text().catch(() => '');
+            throw new Error(detail || `Server error (${res.status})`);
+          }
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/dicom')) effectiveType = 'dicom';
         }
 
-        const contentType = res.headers.get('content-type') || '';
-        let effectiveType = getFileType(fileName, mimeType, fileTypeKey);
-        if (contentType.includes('application/dicom')) effectiveType = 'dicom';
         setResolvedFileType(effectiveType);
 
         if (effectiveType === 'dicom') {
