@@ -62,6 +62,7 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
 
         let res;
         let effectiveType = getFileType(fileName, mimeType, fileTypeKey);
+        let correctMime = mimeType || 'application/octet-stream';
 
         // Try signed URL first (direct GCS download, faster)
         try {
@@ -70,6 +71,7 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
           });
           if (urlRes.ok) {
             const { view_url, mime_type: serverMime } = await urlRes.json();
+            if (serverMime) correctMime = serverMime;
             if (serverMime && serverMime.includes('dicom')) effectiveType = 'dicom';
             res = await fetch(view_url);
             if (!res.ok) throw new Error('Signed URL fetch failed');
@@ -87,20 +89,22 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
           }
           const contentType = res.headers.get('content-type') || '';
           if (contentType.includes('application/dicom')) effectiveType = 'dicom';
+          correctMime = contentType || correctMime;
         }
 
         setResolvedFileType(effectiveType);
 
         if (effectiveType === 'dicom') {
           const arrayBuffer = await res.arrayBuffer();
-          setDicomBuffer(arrayBuffer);
+          setDicomBuffer({ buffer: arrayBuffer, usedSignedUrl: res.url?.includes('storage.googleapis.com') });
         } else if (effectiveType === 'docx') {
           const arrayBuffer = await res.arrayBuffer();
           const result = await mammoth.convertToHtml({ arrayBuffer });
           setDocxHtml(result.value);
         } else {
-          const blob = await res.blob();
-          setBlobUrl(URL.createObjectURL(blob));
+          const rawBlob = await res.blob();
+          const typedBlob = new Blob([rawBlob], { type: correctMime });
+          setBlobUrl(URL.createObjectURL(typedBlob));
         }
       } catch (err) {
         setError(err.message);
@@ -118,17 +122,35 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
   useEffect(() => {
     if (!dicomBuffer) return;
 
+    const buffer = dicomBuffer.buffer || dicomBuffer;
+    const usedSignedUrl = dicomBuffer.usedSignedUrl || false;
+
+    const retryViaBackend = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const apiUrl = process.env.REACT_APP_API_URL || '';
+        const res = await fetch(`${apiUrl}/api/v1/patient/view-file/${attachmentId}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error('Backend fallback failed');
+        const retryBuffer = await res.arrayBuffer();
+        setDicomBuffer({ buffer: retryBuffer, usedSignedUrl: false });
+      } catch (err) {
+        setError(`DICOM render error: could not decompress file`);
+      }
+    };
+
     try {
-      const byteArray = new Uint8Array(dicomBuffer);
+      const byteArray = new Uint8Array(buffer);
 
       // Detect non-DICOM files mislabeled with .dcm extension
       if (byteArray[0] === 0xFF && byteArray[1] === 0xD8) {
-        setBlobUrl(URL.createObjectURL(new Blob([dicomBuffer], { type: 'image/jpeg' })));
+        setBlobUrl(URL.createObjectURL(new Blob([buffer], { type: 'image/jpeg' })));
         setDicomBuffer(null);
         return;
       }
       if (byteArray[0] === 0x89 && byteArray[1] === 0x50) {
-        setBlobUrl(URL.createObjectURL(new Blob([dicomBuffer], { type: 'image/png' })));
+        setBlobUrl(URL.createObjectURL(new Blob([buffer], { type: 'image/png' })));
         setDicomBuffer(null);
         return;
       }
@@ -231,9 +253,13 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
 
       ctx.putImageData(imageData, 0, 0);
     } catch (err) {
-      setError(`DICOM render error: ${err.message}`);
+      if (usedSignedUrl) {
+        retryViaBackend();
+      } else {
+        setError(`DICOM render error: ${err.message}`);
+      }
     }
-  }, [dicomBuffer]);
+  }, [dicomBuffer, attachmentId]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
