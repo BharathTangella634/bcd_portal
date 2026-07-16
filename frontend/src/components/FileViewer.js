@@ -51,6 +51,7 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
 
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
+  const backendRetried = useRef(false);
 
   const fileType = resolvedFileType || getFileType(fileName, mimeType, fileTypeKey);
 
@@ -162,12 +163,6 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
 
       // Handle compressed/encapsulated pixel data
       if (pixelDataElement.encapsulatedPixelData) {
-        const transferSyntax = dataSet.string('x00020010') || '';
-
-        if (!transferSyntax.startsWith('1.2.840.10008.1.2.4.')) {
-          throw new Error(`Unsupported compressed transfer syntax: ${transferSyntax}`);
-        }
-
         const fragments = pixelDataElement.fragments;
         if (!fragments || fragments.length === 0) throw new Error('No pixel data fragments in compressed DICOM');
 
@@ -180,6 +175,7 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
           pos += f.length;
         });
 
+        const transferSyntax = dataSet.string('x00020010') || '';
         const isJp2 = transferSyntax.includes('1.2.840.10008.1.2.4.90') || transferSyntax.includes('1.2.840.10008.1.2.4.91');
         const mime = isJp2 ? 'image/jp2' : 'image/jpeg';
 
@@ -349,6 +345,27 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
                 src={blobUrl}
                 alt={fileName}
                 draggable={false}
+                onError={async () => {
+                  if (fileType !== 'dicom' || backendRetried.current) {
+                    setError('Could not render image');
+                    return;
+                  }
+                  backendRetried.current = true;
+                  try {
+                    const token = localStorage.getItem('token');
+                    const apiUrl = process.env.REACT_APP_API_URL || '';
+                    const res = await fetch(`${apiUrl}/api/v1/patient/view-file/${attachmentId}`, {
+                      headers: { 'Authorization': `Bearer ${token}` },
+                    });
+                    if (!res.ok) throw new Error('fallback failed');
+                    const buf = await res.arrayBuffer();
+                    URL.revokeObjectURL(blobUrl);
+                    setBlobUrl(null);
+                    setDicomBuffer({ buffer: buf, usedSignedUrl: false });
+                  } catch {
+                    setError('Could not load DICOM image');
+                  }
+                }}
                 style={{
                   maxWidth: '100%', maxHeight: '100%',
                   transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
