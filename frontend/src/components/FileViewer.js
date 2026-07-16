@@ -160,8 +160,14 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
       const pixelDataElement = dataSet.elements.x7fe00010;
       if (!pixelDataElement) throw new Error('No pixel data found in DICOM file');
 
-      // Handle compressed/encapsulated pixel data (JPEG, JPEG2000, etc.)
+      // Handle compressed/encapsulated pixel data
       if (pixelDataElement.encapsulatedPixelData) {
+        const transferSyntax = dataSet.string('x00020010') || '';
+
+        if (!transferSyntax.startsWith('1.2.840.10008.1.2.4.')) {
+          throw new Error(`Unsupported compressed transfer syntax: ${transferSyntax}`);
+        }
+
         const fragments = pixelDataElement.fragments;
         if (!fragments || fragments.length === 0) throw new Error('No pixel data fragments in compressed DICOM');
 
@@ -174,7 +180,6 @@ const FileViewer = ({ attachmentId, fileName, mimeType, fileTypeKey, onClose }) 
           pos += f.length;
         });
 
-        const transferSyntax = dataSet.string('x00020010') || '';
         const isJp2 = transferSyntax.includes('1.2.840.10008.1.2.4.90') || transferSyntax.includes('1.2.840.10008.1.2.4.91');
         const mime = isJp2 ? 'image/jp2' : 'image/jpeg';
 
