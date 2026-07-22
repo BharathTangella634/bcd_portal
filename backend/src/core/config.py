@@ -56,6 +56,10 @@ class Settings:
     REMINDER_REPLY_TO: str = _cfg("REMINDER_REPLY_TO", REMINDER_SUPPORT_EMAIL)
     REMINDER_TIMEZONE: str = _cfg("REMINDER_TIMEZONE", "Asia/Kolkata")
 
+    CRON_OIDC_AUDIENCE: str = _cfg("CRON_OIDC_AUDIENCE")
+    CRON_SERVICE_ACCOUNT_EMAIL: str = _cfg("CRON_SERVICE_ACCOUNT_EMAIL")
+    CRON_SHARED_SECRET: str = _cfg("CRON_SHARED_SECRET")
+
     MYSQL_DB_QUESTIONNAIRE: str = _cfg("MYSQL_DB_QUESTIONNAIRE", "bcd_questionnaire")
 
 settings = Settings()
