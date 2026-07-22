@@ -196,6 +196,37 @@ def test_due_check_uses_last_successful_delivery():
         db.close()
 
 
+def test_due_check_supports_five_minute_pilot_interval():
+    db = TestSession()
+    as_of = datetime(2026, 8, 20, 9, 0)
+    try:
+        db.query(ReminderEmailLog).filter(ReminderEmailLog.hospital_id == "clinic_00001").delete()
+        db.add(ReminderEmailLog(
+            hospital_id="clinic_00001",
+            recipient_email="manisha.verma@tanuh.ai",
+            report_date=date(2026, 8, 20),
+            quarter_start=date(2026, 7, 1),
+            quarter_end=date(2026, 10, 1),
+            data_points=10,
+            assessments_submitted=8,
+            pending_submissions=190,
+            quarterly_target=200,
+            status="sent",
+            sent_at=as_of - timedelta(minutes=4),
+        ))
+        db.commit()
+        assert is_due(db, "clinic_00001", as_of, 14, interval_minutes=5) is False
+
+        log = db.query(ReminderEmailLog).filter(ReminderEmailLog.hospital_id == "clinic_00001").one()
+        log.sent_at = as_of - timedelta(minutes=5)
+        db.commit()
+        assert is_due(db, "clinic_00001", as_of, 14, interval_minutes=5) is True
+    finally:
+        db.query(ReminderEmailLog).filter(ReminderEmailLog.hospital_id == "clinic_00001").delete()
+        db.commit()
+        db.close()
+
+
 def test_send_report_records_success_and_prevents_duplicate(monkeypatch):
     db = TestSession()
     q_db = TestQSession()

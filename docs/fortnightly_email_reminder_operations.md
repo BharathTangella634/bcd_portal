@@ -23,6 +23,7 @@ Production secrets are resolved through Google Secret Manager in project `bcd-pr
 - `REMINDER_RECIPIENT_EMAIL` (optional safety override for an approved test recipient)
 - `REMINDER_QUARTERLY_TARGET` (defaults to `200`)
 - `REMINDER_INTERVAL_DAYS` (defaults to `14`)
+- `REMINDER_INTERVAL_MINUTES` (defaults to `0`; non-zero values are pilot-only and take precedence over days)
 - `REMINDER_PORTAL_URL`
 - `REMINDER_SUPPORT_EMAIL`
 - `REMINDER_REPLY_TO`
@@ -30,9 +31,9 @@ Production secrets are resolved through Google Secret Manager in project `bcd-pr
 
 The VM or backend container service account needs Secret Manager accessor permission for these secrets.
 
-For local interval testing only, set `REMINDER_INTERVAL_DAYS=1`. Keep the production Secret Manager value at `14` until a deliberate production schedule change is approved.
+For the controlled local pilot only, set `REMINDER_INTERVAL_MINUTES=5`. Keep the production value at `0` and `REMINDER_INTERVAL_DAYS=14`. A non-zero minute interval takes precedence over the day interval.
 
-The repository includes an ignored `.env.reminder.local` file configured for the approved test recipient `manisha.verma@tanuh.ai`, the sender identity `breastcancerscreening@tanuh.ai`, a one-day interval, and live delivery disabled. Load it into the shell before a local dry run. It deliberately contains no SMTP password. Live delivery must remain disabled until an App Password or Workspace relay credential is supplied securely for an intentional pilot.
+The repository includes an ignored `.env.reminder.local` file configured for the approved test recipient `manisha.verma@tanuh.ai`, the sender identity `breastcancerscreening@tanuh.ai`, a five-minute interval, and live delivery disabled. Load it into the shell before a local dry run. It deliberately contains no SMTP password. Live delivery must remain disabled until an App Password or Workspace relay credential is supplied securely for an intentional pilot.
 
 When `REMINDER_RECIPIENT_EMAIL` is empty in production, each report goes to its hospital's registered email. When it is set, every generated report goes to that override address, which prevents accidental hospital delivery during a pilot.
 

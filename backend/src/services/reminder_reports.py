@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
@@ -148,14 +148,26 @@ def build_report(
     )
 
 
-def is_due(db: Session, hospital_id: str, report_date: date, interval_days: int) -> bool:
+def is_due(
+    db: Session,
+    hospital_id: str,
+    as_of: date | datetime,
+    interval_days: int,
+    interval_minutes: int = 0,
+) -> bool:
     last_sent = db.query(func.max(ReminderEmailLog.sent_at)).filter(
         ReminderEmailLog.hospital_id == hospital_id,
         ReminderEmailLog.status == "sent",
     ).scalar()
     if not last_sent:
         return True
-    return last_sent.date() <= report_date - timedelta(days=interval_days)
+    check_time = as_of if isinstance(as_of, datetime) else datetime.combine(as_of, time.min)
+    interval = (
+        timedelta(minutes=interval_minutes)
+        if interval_minutes > 0
+        else timedelta(days=interval_days)
+    )
+    return last_sent <= check_time - interval
 
 
 def report_variables(report: ReminderReport) -> dict:
@@ -260,14 +272,25 @@ def run_reminders(
     dry_run: bool = False,
     force: bool = False,
 ) -> List[ReminderEmailLog]:
-    report_date = report_date or current_date()
+    if report_date is None:
+        now = datetime.now(ZoneInfo(settings.REMINDER_TIMEZONE)).replace(tzinfo=None)
+        report_date = now.date()
+        due_as_of = now
+    else:
+        due_as_of = datetime.combine(report_date, time.min)
     query = db.query(Hospital).filter(Hospital.email.isnot(None), Hospital.email != "")
     if hospital_id:
         query = query.filter(Hospital.id == hospital_id)
 
     results = []
     for hospital in query.order_by(Hospital.id).all():
-        if not force and not is_due(db, hospital.id, report_date, settings.REMINDER_INTERVAL_DAYS):
+        if not force and not is_due(
+            db,
+            hospital.id,
+            due_as_of,
+            settings.REMINDER_INTERVAL_DAYS,
+            settings.REMINDER_INTERVAL_MINUTES,
+        ):
             continue
         results.append(send_report(
             db,

@@ -42,10 +42,11 @@ Do not enable the existing systemd timer when Cloud Scheduler is active. Only on
 ## Pilot
 
 1. Keep reminder delivery disabled.
-2. Configure the test recipient override.
-3. Invoke the endpoint with `dry_run=true` for one hospital.
-4. Reconcile the calculated figures manually.
-5. Configure SMTP securely and perform one controlled delivery.
-6. Confirm the audit record and duplicate prevention.
-7. Restore the 14-day production interval and approved recipient policy.
-8. Enable the Cloud Scheduler job and monitor its first two cycles.
+2. Configure the test recipient override as `manisha.verma@tanuh.ai`.
+3. Set `REMINDER_INTERVAL_MINUTES=5` and invoke the cron endpoint every five minutes during the short pilot.
+4. Invoke the endpoint with `dry_run=true` for one hospital.
+5. Reconcile the calculated figures manually.
+6. Configure SMTP securely and perform one controlled delivery.
+7. Confirm that another invocation before five minutes does not send, and one after five minutes becomes eligible.
+8. Restore `REMINDER_INTERVAL_MINUTES=0` and the 14-day production interval.
+9. Enable the daily production Cloud Scheduler job and monitor its first two cycles.
