@@ -1,52 +1,55 @@
 # GCP Cloud Scheduler Reminder API
 
-## Design
+## Endpoint and authentication
 
-GCP Cloud Scheduler calls the internal backend endpoint once per day. The endpoint invokes the existing reminder service, which independently checks the last successful delivery and sends only when the configured interval (14 days in production) has elapsed.
-
-Endpoint:
+Cloud Scheduler calls:
 
 `POST /api/internal/jobs/fortnightly-reminders`
 
-This endpoint does not accept arbitrary recipients, subjects, or email bodies. It uses the existing hospital/report configuration, database template, delivery audit, and duplicate-prevention flow.
+The endpoint accepts optional `dry_run` and `hospital_id` query parameters. It does not accept recipients, subjects, or arbitrary message content.
 
-## Authentication
+Production requests require a Google-signed OIDC token. Configure `CRON_OIDC_AUDIENCE` as the exact public endpoint URL and `CRON_SERVICE_ACCOUNT_EMAIL` as the dedicated scheduler service account. Leave `CRON_SHARED_SECRET` empty in production. The backend verifies the token audience, verified email claim, and exact service-account identity.
 
-Production requests must use an OIDC token issued for a dedicated Cloud Scheduler service account. Configure:
+For local testing only, `CRON_SHARED_SECRET` may be sent in `X-Cron-Secret`. Store it outside Git.
 
-- `CRON_OIDC_AUDIENCE`: the exact public HTTPS endpoint URL.
-- `CRON_SERVICE_ACCOUNT_EMAIL`: the dedicated scheduler service-account email.
-- `CRON_SHARED_SECRET`: leave empty in production.
+## Production schedule
 
-The endpoint verifies the Google-signed token, audience, verified email, and exact service-account identity.
+Create the Scheduler job in project `bcd-prototypes` with these properties:
 
-For controlled local testing only, `CRON_SHARED_SECRET` can be set and supplied through the `X-Cron-Secret` header. It must not be committed or used as the production authentication method.
+- Schedule: `0 9 * * 1`
+- Time zone: `Asia/Kolkata`
+- HTTP method: `POST`
+- URL: the exact HTTPS Cron endpoint
+- OIDC service account: the dedicated scheduler identity
+- OIDC audience: the exact same endpoint URL
+- Retry attempts: 3
+- Retry delays: increasing from about 5 minutes to no more than 30 minutes
 
-## Safety controls
+The weekly trigger plus the backend's per-recipient 14-day last-success check produces delivery every alternate Monday at 9:00 AM IST. It also prevents a late or retried job from creating duplicate successful deliveries.
 
-- Delivery returns an error while `REMINDER_EMAIL_ENABLED=false`.
-- Authenticated dry runs remain available while delivery is disabled.
-- The normal 14-day eligibility guard remains active.
-- The existing audit table records dry runs, successes, and failures.
-- No patient-level data is returned by the endpoint.
-- The endpoint reports only aggregate execution counts.
+## Runtime behavior
 
-## Cloud Scheduler configuration
+- Live delivery is rejected while `REMINDER_EMAIL_ENABLED=false`.
+- Live delivery is rejected after an authorized operator disables reports.
+- Live delivery is rejected while an authorized operator has paused reports.
+- Authenticated dry runs remain available in both states.
+- The initial hospital-email scope is restricted by `REMINDER_PILOT_HOSPITALS`.
+- The aggregate report always covers all non-excluded hospitals.
+- Each active hospital user and each aggregate recipient has an independent due check and audit record.
+- A failed recipient makes the endpoint return HTTP 502 so Scheduler retries it.
+- A previously successful recipient is skipped during the retry.
+- Audit rows older than the configured 365-day retention are cleaned up during runs.
 
-Create a dedicated service account in project `bcd-prototypes` and grant only the permissions required to mint an OIDC token for the scheduler request. Configure a daily HTTP job at approximately 9:00 AM Asia/Kolkata with method `POST`, the internal endpoint URL, and an OIDC token whose audience exactly matches `CRON_OIDC_AUDIENCE`.
+Do not enable the systemd reminder timer while Cloud Scheduler is active.
 
-Cloud Scheduler may retry transient failures. Application idempotency and the reminder delivery log prevent an already successful same-period report from being sent again.
+## Rollout sequence
 
-Do not enable the existing systemd timer when Cloud Scheduler is active. Only one scheduling mechanism should own the trigger.
-
-## Pilot
-
-1. Keep reminder delivery disabled.
-2. Configure the test recipient override as `manisha.verma@tanuh.ai`.
-3. Set `REMINDER_INTERVAL_MINUTES=5` and invoke the cron endpoint every five minutes during the short pilot.
-4. Invoke the endpoint with `dry_run=true` for one hospital.
-5. Reconcile the calculated figures manually.
-6. Configure SMTP securely and perform one controlled delivery.
-7. Confirm that another invocation before five minutes does not send, and one after five minutes becomes eligible.
-8. Restore `REMINDER_INTERVAL_MINUTES=0` and the 14-day production interval.
-9. Enable the daily production Cloud Scheduler job and monitor its first two cycles.
+1. Apply both reminder migrations to the development database.
+2. Confirm exact pilot hospital identifiers and active user recipients using read-only queries.
+3. Configure the sender, Cron OIDC values, and pilot override with live delivery disabled.
+4. Invoke one authenticated dry run and reconcile all metrics.
+5. Perform the five-minute internal pilot to `manisha.verma@tanuh.ai`.
+6. Restore the production interval and remove the recipient override.
+7. Verify SPF, DKIM, DMARC, sender alignment, and the final templates.
+8. Enable live delivery and the Monday Scheduler job for the two pilot institutions.
+9. Monitor the first two successful biweekly cycles before clearing the pilot-hospital restriction.

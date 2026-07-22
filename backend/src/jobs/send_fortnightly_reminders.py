@@ -4,7 +4,7 @@ from datetime import date
 
 from ..core.config import settings
 from ..db.session import QuestionnaireSessionLocal, SessionLocal
-from ..services.reminder_reports import run_reminders
+from ..services.reminder_reports import is_delivery_disabled, is_delivery_paused, run_reminders
 
 
 def parse_args():
@@ -25,6 +25,10 @@ def main():
     db = SessionLocal()
     questionnaire_db = QuestionnaireSessionLocal()
     try:
+        if is_delivery_disabled(db) and not args.dry_run:
+            raise SystemExit("Reminder emails were disabled by an authorized operator.")
+        if is_delivery_paused(db) and not args.dry_run:
+            raise SystemExit("Reminder emails are paused by an authorized operator.")
         results = run_reminders(
             db,
             questionnaire_db,
@@ -35,12 +39,16 @@ def main():
         )
         for result in results:
             print(
-                f"{result.hospital_id}: {result.status}; "
+                f"{result.report_type}:{result.hospital_id or 'all'} -> "
+                f"{result.recipient_email}: {result.status}; "
+                f"lifetime_data_points={result.lifetime_data_points}; "
                 f"data_points={result.data_points}; "
                 f"assessments={result.assessments_submitted}; "
                 f"pending={result.pending_submissions}"
             )
-        print(f"Processed {len(results)} hospital report(s).")
+        print(f"Processed {len(results)} reminder delivery attempt(s).")
+        if any(result.status == "failed" for result in results):
+            raise SystemExit("One or more reminder deliveries failed.")
     finally:
         questionnaire_db.close()
         db.close()

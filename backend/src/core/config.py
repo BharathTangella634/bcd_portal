@@ -49,13 +49,37 @@ class Settings:
 
     REMINDER_EMAIL_ENABLED: bool = _cfg("REMINDER_EMAIL_ENABLED", "false").lower() == "true"
     REMINDER_RECIPIENT_EMAIL: str = _cfg("REMINDER_RECIPIENT_EMAIL", "")
+    REMINDER_FROM_EMAIL: str = _cfg(
+        "REMINDER_FROM_EMAIL",
+        "PinkShield AI <breastcancerscreening@tanuh.ai>",
+    )
     REMINDER_QUARTERLY_TARGET: int = int(_cfg("REMINDER_QUARTERLY_TARGET", "200"))
     REMINDER_INTERVAL_DAYS: int = int(_cfg("REMINDER_INTERVAL_DAYS", "14"))
     REMINDER_INTERVAL_MINUTES: int = int(_cfg("REMINDER_INTERVAL_MINUTES", "0"))
     REMINDER_PORTAL_URL: str = _cfg("REMINDER_PORTAL_URL", "https://bc-portal-dev.tanuh.ai/login")
-    REMINDER_SUPPORT_EMAIL: str = _cfg("REMINDER_SUPPORT_EMAIL", SMTP_USER)
-    REMINDER_REPLY_TO: str = _cfg("REMINDER_REPLY_TO", REMINDER_SUPPORT_EMAIL)
+    REMINDER_SUPPORT_EMAIL: str = _cfg("REMINDER_SUPPORT_EMAIL", "")
+    REMINDER_REPLY_TO: str = _cfg("REMINDER_REPLY_TO", "")
     REMINDER_TIMEZONE: str = _cfg("REMINDER_TIMEZONE", "Asia/Kolkata")
+    REMINDER_PILOT_HOSPITALS: str = _cfg(
+        "REMINDER_PILOT_HOSPITALS",
+        "Shanmuga,Sudarshana Scans",
+    )
+    REMINDER_EXCLUDED_HOSPITALS: str = _cfg(
+        "REMINDER_EXCLUDED_HOSPITALS",
+        "Test,Tanuh Foundation",
+    )
+    REMINDER_AGGREGATE_RECIPIENTS: str = _cfg(
+        "REMINDER_AGGREGATE_RECIPIENTS",
+        "ashwin.rajkumar@tanuh.ai,vaishnavi.joshi@tanuh.ai",
+    )
+    REMINDER_OPERATOR_EMAILS: str = _cfg(
+        "REMINDER_OPERATOR_EMAILS",
+        (
+            "bharath.tangella@tanuh.ai,ashwin.rajkumar@tanuh.ai,"
+            "vaishnavi.joshi@tanuh.ai,palivela.sanjana@tanuh.ai"
+        ),
+    )
+    REMINDER_LOG_RETENTION_DAYS: int = int(_cfg("REMINDER_LOG_RETENTION_DAYS", "365"))
 
     CRON_OIDC_AUDIENCE: str = _cfg("CRON_OIDC_AUDIENCE")
     CRON_SERVICE_ACCOUNT_EMAIL: str = _cfg("CRON_SERVICE_ACCOUNT_EMAIL")

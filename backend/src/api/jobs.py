@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..db.session import get_db, get_questionnaire_db
-from ..services.reminder_reports import run_reminders
+from ..services.reminder_reports import is_delivery_disabled, is_delivery_paused, run_reminders
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -76,6 +76,16 @@ def trigger_fortnightly_reminders(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Reminder email delivery is disabled",
         )
+    if not dry_run and is_delivery_disabled(db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Reminder email delivery was disabled by an authorized operator",
+        )
+    if not dry_run and is_delivery_paused(db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Reminder email delivery is paused",
+        )
 
     results = run_reminders(
         db,
@@ -88,10 +98,16 @@ def trigger_fortnightly_reminders(
         if result.status in statuses:
             statuses[result.status] += 1
 
-    return {
+    response = {
         "success": statuses["failed"] == 0,
         "processed": len(results),
         "sent": statuses["sent"],
         "failed": statuses["failed"],
         "dryRun": statuses["dry_run"],
     }
+    if statuses["failed"]:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=response,
+        )
+    return response

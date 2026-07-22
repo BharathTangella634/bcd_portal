@@ -1,6 +1,7 @@
 import re
 import smtplib
 import logging
+from email.utils import parseaddr
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List
@@ -18,6 +19,7 @@ def send_email(
     html: str,
     cc: List[str] = None,
     reply_to: str = None,
+    from_email: str = None,
     raise_on_error: bool = False,
 ) -> bool:
     if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
@@ -28,7 +30,7 @@ def send_email(
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = settings.SMTP_FROM or settings.SMTP_USER
+    msg["From"] = from_email or settings.SMTP_FROM or settings.SMTP_USER
     msg["To"] = to_email
     if reply_to:
         msg["Reply-To"] = reply_to
@@ -42,7 +44,8 @@ def send_email(
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
             server.starttls()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(msg["From"], recipients, msg.as_string())
+            envelope_sender = parseaddr(msg["From"])[1] or settings.SMTP_USER
+            server.sendmail(envelope_sender, recipients, msg.as_string())
         logger.info("Email sent to %s (cc: %s, subject: %s)", to_email, cc or "none", subject)
         return True
     except Exception as e:
@@ -65,6 +68,8 @@ def send_template_email(
     to_email: str,
     variables: dict,
     reply_to: str = None,
+    from_email: str = None,
+    include_configured_cc: bool = True,
     raise_on_error: bool = False,
 ) -> bool:
     from ..models.models import EmailTemplate, EmailTemplateCc
@@ -76,8 +81,10 @@ def send_template_email(
             raise RuntimeError(f"Email template '{template_key}' was not found")
         return False
 
-    cc_rows = db.query(EmailTemplateCc).filter(EmailTemplateCc.template_key == template_key).all()
-    cc_list = [row.cc_email for row in cc_rows if row.cc_email != to_email]
+    cc_list = []
+    if include_configured_cc:
+        cc_rows = db.query(EmailTemplateCc).filter(EmailTemplateCc.template_key == template_key).all()
+        cc_list = [row.cc_email for row in cc_rows if row.cc_email != to_email]
 
     variables.setdefault("login_url", LOGIN_URL)
 
@@ -89,5 +96,6 @@ def send_template_email(
         html,
         cc=cc_list if cc_list else None,
         reply_to=reply_to,
+        from_email=from_email,
         raise_on_error=raise_on_error,
     )
