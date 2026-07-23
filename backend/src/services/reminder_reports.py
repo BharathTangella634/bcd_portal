@@ -412,9 +412,20 @@ def _delivery_key(
     recipient_email: str,
     hospital_id: Optional[str],
     unique_attempt: bool,
+    idempotency_period: Optional[str] = None,
 ) -> str:
-    key = f"{report_type}:{hospital_id or 'all'}:{report_date.isoformat()}:{recipient_email.lower()}"
+    period = idempotency_period or report_date.isoformat()
+    key = f"{report_type}:{hospital_id or 'all'}:{period}:{recipient_email.lower()}"
     return f"{key}:{uuid.uuid4().hex}" if unique_attempt else key
+
+
+def _idempotency_period(as_of: datetime, interval_minutes: int) -> Optional[str]:
+    if interval_minutes <= 0:
+        return None
+    elapsed_minutes = int(
+        (as_of - datetime(1970, 1, 1)).total_seconds() // 60
+    )
+    return f"pilot-{interval_minutes}m-{elapsed_minutes // interval_minutes}"
 
 
 def _set_log_metrics(log: ReminderEmailLog, reports: list[ReminderReport]) -> None:
@@ -447,6 +458,7 @@ def _delivery_log(
     hospital_id: Optional[str],
     dry_run: bool,
     force: bool,
+    idempotency_period: Optional[str] = None,
 ) -> tuple[ReminderEmailLog, bool]:
     idempotency_key = _delivery_key(
         report_type,
@@ -454,6 +466,7 @@ def _delivery_log(
         recipient.email,
         hospital_id,
         unique_attempt=dry_run or force,
+        idempotency_period=idempotency_period,
     )
     existing = db.query(ReminderEmailLog).filter(
         ReminderEmailLog.idempotency_key == idempotency_key
@@ -531,6 +544,7 @@ def send_report(
     recipient: ReminderRecipient,
     dry_run: bool = False,
     force: bool = False,
+    idempotency_period: Optional[str] = None,
 ) -> ReminderEmailLog:
     log, should_send = _delivery_log(
         db,
@@ -543,6 +557,7 @@ def send_report(
         report.hospital_id,
         dry_run,
         force,
+        idempotency_period,
     )
     return _send_delivery(
         db,
@@ -561,6 +576,7 @@ def send_aggregate_report(
     recipient: ReminderRecipient,
     dry_run: bool = False,
     force: bool = False,
+    idempotency_period: Optional[str] = None,
 ) -> ReminderEmailLog:
     quarter_start, quarter_end = quarter_bounds(report_date)
     log, should_send = _delivery_log(
@@ -574,6 +590,7 @@ def send_aggregate_report(
         None,
         dry_run,
         force,
+        idempotency_period,
     )
     return _send_delivery(
         db,
@@ -679,6 +696,10 @@ def run_reminders(
         include_aggregate = hospital_id is None
 
     cleanup_delivery_logs(db, due_as_of)
+    idempotency_period = _idempotency_period(
+        due_as_of,
+        settings.REMINDER_INTERVAL_MINUTES,
+    )
     all_reports = build_reports(
         db,
         questionnaire_db,
@@ -713,7 +734,14 @@ def run_reminders(
                 "hospital",
             ):
                 continue
-            results.append(send_report(db, report, recipient, dry_run=dry_run, force=force))
+            results.append(send_report(
+                db,
+                report,
+                recipient,
+                dry_run=dry_run,
+                force=force,
+                idempotency_period=idempotency_period,
+            ))
 
     if include_aggregate and all_reports:
         for recipient in aggregate_recipients():
@@ -734,5 +762,6 @@ def run_reminders(
                 recipient,
                 dry_run=dry_run,
                 force=force,
+                idempotency_period=idempotency_period,
             ))
     return results

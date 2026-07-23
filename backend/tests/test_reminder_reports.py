@@ -359,3 +359,42 @@ def test_send_report_records_success_and_prevents_duplicate(monkeypatch):
         db.commit()
         db.close()
         q_db.close()
+
+
+def test_new_five_minute_period_can_send_another_pilot_email(monkeypatch):
+    db = TestSession()
+    q_db = TestQSession()
+    hospital = db.query(Hospital).filter(Hospital.id == "clinic_00001").one()
+    recipient = ReminderRecipient("manisha.verma@tanuh.ai", "Pilot Reviewer")
+    report_date = date(2026, 9, 2)
+    calls = []
+
+    monkeypatch.setattr(
+        reminder_reports,
+        "send_template_email",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    )
+    try:
+        db.query(ReminderEmailLog).filter(
+            ReminderEmailLog.report_date == report_date,
+            ReminderEmailLog.recipient_email == recipient.email,
+        ).delete(synchronize_session=False)
+        db.commit()
+        report = build_report(db, q_db, hospital, report_date, target=200)
+
+        first = send_report(db, report, recipient, idempotency_period="pilot-5m-100")
+        duplicate = send_report(db, report, recipient, idempotency_period="pilot-5m-100")
+        next_period = send_report(db, report, recipient, idempotency_period="pilot-5m-101")
+
+        assert first.status == "sent"
+        assert duplicate.id == first.id
+        assert next_period.id != first.id
+        assert len(calls) == 2
+    finally:
+        db.query(ReminderEmailLog).filter(
+            ReminderEmailLog.report_date == report_date,
+            ReminderEmailLog.recipient_email == recipient.email,
+        ).delete(synchronize_session=False)
+        db.commit()
+        db.close()
+        q_db.close()
