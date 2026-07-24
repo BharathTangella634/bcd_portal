@@ -7,6 +7,7 @@ import {
 import './Stats.css';
 import RiskTable from './RiskTable';
 import IndiaMap from './IndiaMap';
+import MammogramStats from './mammogramStats';
 
 const AnimatedCounter = ({ value, duration = 1500 }) => {
   const [count, setCount] = useState(0);
@@ -231,6 +232,9 @@ const Stats = () => {
         </div>
       </div>
       <div style={{ marginTop: '20px', width: '100%' }}><RiskTable /></div>
+      <div style={{ marginTop: '20px', width: '100%' }}>
+        <MammogramStats />
+      </div>
     </div>
   );
 };

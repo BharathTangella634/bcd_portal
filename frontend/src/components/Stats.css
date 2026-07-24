@@ -343,3 +343,23 @@
   opacity: 1 !important;
   z-index: 1000 !important;
 }
+
+.hospital-chart-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+}
+
+.hospital-chart-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.hospital-chart-scroll::-webkit-scrollbar-thumb {
+  background: #14868c;
+  border-radius: 8px;
+}
+
+.hospital-chart-scroll::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
