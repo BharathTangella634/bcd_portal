@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList
 } from 'recharts';
 import { Image as ImageIcon, FileCheck2, Building2 } from 'lucide-react';
 import './Stats.css';
 
 const COLORS = ['#6ee7b7', '#fde047', '#fb923c', '#fb7185', '#14868C'];
+const CR_DR_LABELS = {
+  CR: 'CR (Computed Radiography)',
+  DR: 'DR (Digital Radiography)',
+  Unassigned: 'Unassigned',
+};
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null;
@@ -44,6 +49,18 @@ const CustomTooltip = ({ active, payload, label }) => {
         </>
       )}
 
+      {/* Show hospital list for the CR/DR breakdown pie chart */}
+      {row.hospitals && (
+        <div style={{ maxHeight: 180, overflowY: 'auto', marginBottom: 6 }}>
+          {row.hospitals.map((h, i) => (
+            <div key={i} className="tooltip-item" style={{ display: 'block' }}>
+              <span className="value" style={{ fontWeight: 500 }}>{h.short_name || h.hospital_name}</span>
+              {h.state && <span className="name" style={{ marginLeft: 6, fontSize: 11 }}>({h.state})</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {payload.map((entry, i) => (
         <div key={i} className="tooltip-item">
           <span
@@ -56,6 +73,90 @@ const CustomTooltip = ({ active, payload, label }) => {
       ))}
     </div>
   );
+};
+
+/**
+ * Institute-level machine table.
+ * Expects data.byHospital[i].machines to be an array of:
+ *   { machine_name, make, technology, machine_count }
+ * If a hospital has no `machines` array (e.g. API hasn't been updated yet),
+ * it falls back to a single "No machine data" row so the table never breaks.
+ */
+const InstituteMachineTable = ({ byHospital }) => {
+  const hospitals = byHospital || [];
+
+  // Build flattened rows, tracking how many rows each institute spans
+  const rows = [];
+  hospitals.forEach((h) => {
+    const machines = h.machines && h.machines.length > 0
+      ? h.machines
+      : [{ machine_name: '—', make: '—', technology: '—', machine_count: 0 }];
+
+    machines.forEach((m, idx) => {
+      rows.push({
+        institute: h.hospital_name,
+        isFirstRow: idx === 0,
+        rowSpan: machines.length,
+        machine_name: m.machine_name,
+        make: m.make,
+        technology: m.technology,
+        machine_count: m.machine_count,
+      });
+    });
+  });
+
+  if (rows.length === 0) {
+    return <p style={{ textAlign: 'center', color: '#6b7280' }}>No institute data available.</p>;
+  }
+
+  return (
+    <div className="chart-wrapper" style={{ overflowX: 'auto', height: 'auto' }}>
+      <table className="institute-machine-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ backgroundColor: '#14868C', color: '#fff' }}>
+            <th style={thStyle}>Institute</th>
+            <th style={thStyle}>Machine</th>
+            <th style={thStyle}>Make</th>
+            <th style={thStyle}>Technology</th>
+            <th style={thStyle}>No. of Machines</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid #e5e7eb' }}>
+              {row.isFirstRow && (
+                <td
+                  rowSpan={row.rowSpan}
+                  style={{ ...tdStyle, fontWeight: 600, verticalAlign: 'middle', backgroundColor: '#f0fdfa' }}
+                >
+                  {row.institute}
+                </td>
+              )}
+              <td style={tdStyle}>{row.machine_name}</td>
+              <td style={tdStyle}>{row.make}</td>
+              <td style={tdStyle}>{row.technology}</td>
+              <td style={{ ...tdStyle, textAlign: 'center' }}>{row.machine_count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const thStyle = {
+  padding: '10px 14px',
+  textAlign: 'left',
+  fontFamily: 'Poppins',
+  fontWeight: 600,
+  fontSize: 13,
+};
+
+const tdStyle = {
+  padding: '10px 14px',
+  fontFamily: 'Poppins',
+  fontSize: 13,
+  color: '#374151',
 };
 
 const MammogramStats = () => {
@@ -127,7 +228,7 @@ const MammogramStats = () => {
         </div>
 
         <div className="chart-card full-width">
-          <h3>Assessment Completeness</h3>
+          <h3>Mammogram Completeness</h3>
           <div className="chart-wrapper pie-wrapper">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -149,27 +250,111 @@ const MammogramStats = () => {
         </div>
 
         <div className="chart-card full-width">
-          <h3>Mammogram Uploads by Institution</h3>
+          <h3>Hospitals by Machine Type (CR / DR)</h3>
+          <div className="chart-wrapper pie-wrapper">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={(data.hospitalTypeBreakdown || []).map((entry) => ({
+                    ...entry,
+                    displayName: CR_DR_LABELS[entry.name] || entry.name,
+                  }))}
+                  cx="50%" cy="50%" outerRadius="80%"
+                  dataKey="value" nameKey="displayName"
+                  label={({ payload, percent }) => percent > 0 ? `${payload.name}: ${(percent * 100).toFixed(0)}%` : ''}
+                >
+                  {(data.hospitalTypeBreakdown || []).map((entry, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Pie>
+                {/* CustomTooltip reads row.hospitals to list institutes in this slice on hover */}
+                <Tooltip content={<CustomTooltip />} />
+                <Legend verticalAlign="bottom" height={36} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+{/* 
+        <div className="chart-card full-width">
+          <h3>Report Completeness</h3>
+          <div className="chart-wrapper pie-wrapper">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={data.reportCompleteness || []}
+                  cx="50%" cy="50%" outerRadius="80%"
+                  dataKey="value" nameKey="name"
+                  label={({ name, percent }) => percent > 0 ? `${name}: ${(percent * 100).toFixed(0)}%` : ''}
+                >
+                  {(data.reportCompleteness || []).map((entry, i) => (
+                    <Cell key={i} fill={['#14868C', '#fb923c'][i % 2]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend verticalAlign="bottom" height={36} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div> */}
+
+        <div className="chart-card full-width">
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <h3 style={{ margin: 0 }}>Mammogram Uploads by Institution</h3>
+            <div style={{ display: 'flex', gap: 16, fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: '#6ee7b7', display: 'inline-block' }} />
+                {(data.byHospital || []).reduce((s, h) => s + (h.dicom_count || 0), 0)} DICOM views
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: '#fb923c', display: 'inline-block' }} />
+                {(data.byHospital || []).reduce((s, h) => s + (h.report_count || 0), 0)} reports
+              </span>
+            </div>
+          </div>
+          <style>{`
+            .hospital-chart-scroll {
+              scrollbar-width: none;
+            }
+            .hospital-chart-scroll::-webkit-scrollbar {
+              height: 8px;
+            }
+            .hospital-chart-scroll::-webkit-scrollbar-thumb {
+              background: transparent;
+              border-radius: 4px;
+            }
+            .hospital-chart-scroll::-webkit-scrollbar-track {
+              background: transparent;
+            }
+            .hospital-chart-scroll:hover {
+              scrollbar-width: thin;
+              scrollbar-color: #9ca3af transparent;
+            }
+            .hospital-chart-scroll:hover::-webkit-scrollbar-thumb {
+              background: #9ca3af;
+            }
+          `}</style>
           <div
             className="chart-wrapper hospital-chart-scroll"
             style={{ overflowX: "auto", overflowY: "hidden" }}
           >
             <div
               style={{
-                width: `${Math.max((data.byHospital?.length || 0) * 90, 900)}px`,
+                width: `${Math.max((data.byHospital?.length || 0) * 130, 900)}px`,
                 height: "100%",
               }}
             >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={data.byHospital || []}
-                  margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
-                  barCategoryGap={20}
+                  margin={{ top: 24, right: 30, left: 20, bottom: 80 }}
+                  barCategoryGap={12}
+                  barGap={2}
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
                     vertical={false}
-                    stroke="#14868C"
+                    stroke="#059669"
                     strokeOpacity={0.1}
                   />
 
@@ -179,46 +364,75 @@ const MammogramStats = () => {
                     angle={-40}
                     textAnchor="end"
                     height={80}
+                    axisLine={{ stroke: '#059669', strokeOpacity: 0.2 }}
+                    tickLine={false}
                     tick={{
                       fontSize: 11,
-                      fill: "#14868C",
+                      fill: "#059669",
                       fontFamily: "Poppins",
                       fontWeight: 500,
                     }}
                   />
 
                   <YAxis
+                    axisLine={false}
+                    tickLine={false}
                     tick={{
                       fontSize: 12,
-                      fill: "#14868C",
+                      fill: "#059669",
                       fontFamily: "Poppins",
                       fontWeight: 500,
                     }}
                   />
 
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend verticalAlign="bottom" height={36} />
+                  <Tooltip
+                    content={<CustomTooltip />}
+                    cursor={{ fill: '#059669', fillOpacity: 0.06 }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    iconType="circle"
+                    wrapperStyle={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 500, color: '#374151' }}
+                  />
 
+                  {/* Separate (grouped) bars instead of stacked — no stackId */}
                   <Bar
                     dataKey="dicom_count"
                     name="DICOM Views"
-                    stackId="a"
-                    fill="#14868C"
-                    maxBarSize={45}
-                  />
+                    fill="#6ee7b7"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={80}
+                  >
+                    <LabelList
+                      dataKey="dicom_count"
+                      position="top"
+                      style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#059669' }}
+                    />
+                  </Bar>
 
                   <Bar
                     dataKey="report_count"
                     name="Reports"
-                    stackId="a"
                     fill="#fb923c"
                     radius={[4, 4, 0, 0]}
-                    maxBarSize={45}
-                  />
+                    maxBarSize={80}
+                  >
+                    <LabelList
+                      dataKey="report_count"
+                      position="top"
+                      style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#c2620d' }}
+                    />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
+        </div>
+
+        <div className="chart-card full-width">
+          <h3>Machines by Institute</h3>
+          <InstituteMachineTable byHospital={data.byHospital} />
         </div>
       </div>
     </div>

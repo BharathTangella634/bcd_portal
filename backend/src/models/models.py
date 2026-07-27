@@ -19,9 +19,22 @@ class Hospital(Base):
     address = Column(Text)
     pincode = Column(String(10))
     state = Column(String(100))
+    type = Column(String(100), nullable=True)
     created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
 
     users = relationship("User", back_populates="hospital")
+    machine = relationship("Machine", back_populates="hospital", uselist=False, cascade="all, delete-orphan")
+
+class Machine(Base):
+    __tablename__ = "machines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hospital_id = Column(String(20), ForeignKey("hospitals.id", ondelete="CASCADE"), nullable=False, unique=True)
+    machine = Column(String(255), nullable=False)
+    make = Column(String(255), nullable=True)
+    technology = Column(String(255), nullable=True)
+    no_of_machines = Column(Integer, default=1)
+    hospital = relationship("Hospital", back_populates="machine")
 
 class Role(Base):
     __tablename__ = "roles"
