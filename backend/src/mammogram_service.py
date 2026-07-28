@@ -1,6 +1,6 @@
 import logging
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
+from sqlalchemy import func, case, text
 from .models.models import Attachment, DoctorAssessment, Hospital, PatientSession, Machine
 
 logger = logging.getLogger(__name__)
@@ -11,6 +11,21 @@ MAMMOGRAM_VIEW_TYPES = [
     'mammo_mlo_left',
     'mammo_mlo_right',
 ]
+
+EXCLUDED_HOSPITAL_NAMES = ('Test', 'Tanuh Foundation')
+INSTITUTE_QUESTIONS = ('Institute Name', 'Institute Name:', 'Enter the Hospital ID(If any, else leave):', 'Q45')
+
+def _get_institute_filter():
+    return """
+    JOIN (
+        SELECT session_id, MAX(answer) as answer
+        FROM session_data_table
+        WHERE question IN :inst_questions
+          AND answer IN :valid_names
+        GROUP BY session_id
+    ) sd_inst ON s.session_id = sd_inst.session_id
+    """
+
 
 def get_view_type_counts(db: Session) -> dict:
     view_counts = {}
@@ -23,19 +38,42 @@ def get_view_type_counts(db: Session) -> dict:
 
     return view_counts
 
-def get_total_mammogram_stats(db: Session) -> dict:
-    dicom_count = db.query(func.count(Attachment.id)).filter(
-        Attachment.file_type.in_(MAMMOGRAM_VIEW_TYPES)
-    ).scalar() or 0
+
+def get_total_subjects_count(db: Session, questionnaire_db: Session) -> int:
+    hospital_rows = db.query(Hospital.name).filter(
+        ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES))
+    ).all()
+    valid_hospitals = [h.name for h in hospital_rows]
+    if not valid_hospitals:
+        return 0
+
+    inst_filter = _get_institute_filter()
+    params = {"inst_questions": INSTITUTE_QUESTIONS, "valid_names": tuple(valid_hospitals)}
+
+    total_res = questionnaire_db.execute(text(f"""
+        SELECT COUNT(DISTINCT s.session_id) as total
+        FROM session_table s {inst_filter}
+        WHERE s.snehita_lifetime_risk IS NOT NULL
+    """), params).fetchone()
+
+    return total_res[0] if total_res else 0
+
+
+def get_total_mammogram_stats(db: Session, questionnaire_db: Session) -> dict:
+    """
+    'imaging_studies' now uses the same questionnaire-DB subject count as
+    completionRate.totalSubjects (591), instead of the app-DB PatientSession count.
+    """
+    imaging_studies_count = get_total_subjects_count(db, questionnaire_db)
 
     report_count = db.query(func.count(Attachment.id)).filter(
         Attachment.file_type == 'mammo_reading'
     ).scalar() or 0
 
     return {
-        'dicom_files': dicom_count,
+        'imaging_studies': imaging_studies_count,
         'reports': report_count,
-        'total': dicom_count + report_count,
+        'total': imaging_studies_count + report_count,
     }
 
 def _mammo_view_count_subquery(db: Session):
@@ -80,6 +118,36 @@ def get_report_missing_count(db: Session) -> int:
     return db.query(func.count(DoctorAssessment.id)).filter(subq == 0).scalar() or 0
 
 
+def get_reports_by_hospital(db: Session) -> list:
+    results = db.query(
+        Hospital.id,
+        Hospital.name,
+        Hospital.short_name,
+        func.count(Attachment.id).label('report_count'),
+    ).outerjoin(
+        DoctorAssessment, DoctorAssessment.hospital_id == Hospital.id
+    ).outerjoin(
+        Attachment,
+        (Attachment.assessment_id == DoctorAssessment.id) &
+        (Attachment.file_type == 'mammo_reading')
+    ).filter(
+        ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES))
+    ).group_by(
+        Hospital.id, Hospital.name, Hospital.short_name
+    ).order_by(
+        func.count(Attachment.id).desc()
+    ).all()
+
+    return [
+        {
+            'hospital_id': row.id,
+            'hospital_name': row.name,
+            'short_name': row.short_name or row.name,
+            'report_count': row.report_count or 0,
+        }
+        for row in results
+    ]
+
 def get_mammogram_by_hospital(db: Session) -> list:
     subject_count_subq = db.query(func.count(PatientSession.id)).filter(
         PatientSession.hospital_id == Hospital.id
@@ -118,7 +186,7 @@ def get_mammogram_by_hospital(db: Session) -> list:
         dicom_count_subq.label('dicom_count'),
         report_count_subq.label('report_count'),
     ).filter(
-        ~Hospital.name.in_(['Test', 'Tanuh Foundation'])
+        ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES))
     ).outerjoin(
         Machine, Machine.hospital_id == Hospital.id
     ).order_by(
@@ -188,15 +256,26 @@ def get_hospital_type_breakdown(db: Session) -> list:
 def get_total_assessments_count(db: Session) -> int:
     return db.query(func.count(DoctorAssessment.id)).scalar() or 0
 
-def get_completion_rate(db: Session) -> float:
-    total_assessments = get_total_assessments_count(db)
-    if total_assessments == 0:
-        return 0.0
 
-    complete_sets = get_complete_sets_count(db)
-    return round((complete_sets / total_assessments) * 100, 2)
+def get_total_views_uploaded_count(db: Session) -> int:
+    return db.query(func.count(Attachment.id)).filter(
+        Attachment.file_type == 'mammo_cc_left'
+    ).scalar() or 0
 
-def get_portal_mammogram_dashboard(db: Session) -> dict:
+
+def get_completion_rate(db: Session, questionnaire_db: Session) -> dict:
+    views_uploaded = get_total_views_uploaded_count(db)
+    total_subjects = get_total_subjects_count(db, questionnaire_db)
+    rate = round((views_uploaded / total_subjects) * 100, 2) if total_subjects else 0.0
+
+    return {
+        "viewsUploaded": views_uploaded,
+        "totalSubjects": total_subjects,
+        "rate": rate,
+    }
+
+
+def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> dict:
     total_assessments = get_total_assessments_count(db)
     complete_sets = get_complete_sets_count(db)
     partial_sets = get_partial_sets_count(db)
@@ -205,9 +284,10 @@ def get_portal_mammogram_dashboard(db: Session) -> dict:
     report_missing = max(total_assessments - report_uploaded, 0)
 
     view_counts = get_view_type_counts(db)
-    totals = get_total_mammogram_stats(db)
+    totals = get_total_mammogram_stats(db, questionnaire_db)
     by_hospital = get_mammogram_by_hospital(db)
     hospital_type_breakdown = get_hospital_type_breakdown(db)
+    reports_by_hospital = get_reports_by_hospital(db)   # <-- new
 
     return {
         "totalAssessments": total_assessments,
@@ -224,7 +304,8 @@ def get_portal_mammogram_dashboard(db: Session) -> dict:
             {"name": "Report Uploaded", "value": report_uploaded},
             {"name": "No Report", "value": report_missing},
         ],
-        "completionRate": get_completion_rate(db),
+        "completionRate": get_completion_rate(db, questionnaire_db),
         "byHospital": by_hospital,
         "hospitalTypeBreakdown": hospital_type_breakdown,
+        "reportsByHospital": reports_by_hospital,   # <-- new
     }

@@ -75,28 +75,54 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-/**
- * Institute-level machine table.
- * Expects data.byHospital[i].machines to be an array of:
- *   { machine_name, make, technology, machine_count }
- * If a hospital has no `machines` array (e.g. API hasn't been updated yet),
- * it falls back to a single "No machine data" row so the table never breaks.
- */
+const CustomPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+  const RADIAN = Math.PI / 180;
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return percent > 0 ? (
+    <text
+      x={x} y={y}
+      fill="#111"
+      textAnchor={x > cx ? 'start' : 'end'}
+      dominantBaseline="central"
+      style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12 }}
+    >
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  ) : null;
+};
+
+const CustomLegend = ({ payload }) => (
+  <ul className="custom-legend">
+    {payload.map((entry, index) => (
+      <li key={`item-${index}`} className="legend-item">
+        <span className="legend-dot" style={{ backgroundColor: entry.color }} />
+        <span
+          className="legend-text"
+          style={{ color: '#14868C', fontWeight: 600, fontFamily: 'Poppins' }}
+        >
+          {entry.value}
+        </span>
+      </li>
+    ))}
+  </ul>
+);
+
+
+// Institute column removed — table now just lists machines per row without the
+// hospital/institute grouping column.
 const InstituteMachineTable = ({ byHospital }) => {
   const hospitals = byHospital || [];
 
-  // Build flattened rows, tracking how many rows each institute spans
   const rows = [];
   hospitals.forEach((h) => {
     const machines = h.machines && h.machines.length > 0
       ? h.machines
       : [{ machine_name: '—', make: '—', technology: '—', machine_count: 0 }];
 
-    machines.forEach((m, idx) => {
+    machines.forEach((m) => {
       rows.push({
-        institute: h.hospital_name,
-        isFirstRow: idx === 0,
-        rowSpan: machines.length,
         machine_name: m.machine_name,
         make: m.make,
         technology: m.technology,
@@ -114,7 +140,6 @@ const InstituteMachineTable = ({ byHospital }) => {
       <table className="institute-machine-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ backgroundColor: '#14868C', color: '#fff' }}>
-            <th style={thStyle}>Institute</th>
             <th style={thStyle}>Machine</th>
             <th style={thStyle}>Make</th>
             <th style={thStyle}>Technology</th>
@@ -124,14 +149,6 @@ const InstituteMachineTable = ({ byHospital }) => {
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} style={{ borderBottom: '1px solid #e5e7eb' }}>
-              {row.isFirstRow && (
-                <td
-                  rowSpan={row.rowSpan}
-                  style={{ ...tdStyle, fontWeight: 600, verticalAlign: 'middle', backgroundColor: '#f0fdfa' }}
-                >
-                  {row.institute}
-                </td>
-              )}
               <td style={tdStyle}>{row.machine_name}</td>
               <td style={tdStyle}>{row.make}</td>
               <td style={tdStyle}>{row.technology}</td>
@@ -187,47 +204,30 @@ const MammogramStats = () => {
   if (!data) return null;
 
   const totals = data.totals || {};
+  const completionRate = data.completionRate || { viewsUploaded: 0, totalSubjects: 0, rate: 0 };
 
   return (
     <div style={{ marginTop: 20 }}>
-      <h2 style={{ textAlign: 'center', color: '#34495e', marginBottom: 20 }}>Mammograms</h2>
+      <h2 style={{ textAlign: 'center', color: '#34495e', marginBottom: 20 }}>Assessment Records</h2>
 
       <div className="summary-section" style={{ marginBottom: '2rem' }}>
         <div className="summary-card">
-          <div className="card-header-with-icon"><ImageIcon className="summary-icon" size={24} /><h3>DICOM Files</h3></div>
-          <div className="big-number">{totals.dicom_files ?? 0}</div>
+          <div className="card-header-with-icon"><ImageIcon className="summary-icon" size={24} /><h3>Imaging Studies</h3></div>
+          <div className="big-number">{totals.imaging_studies ?? 0}</div>
         </div>
         <div className="summary-card">
           <div className="card-header-with-icon"><FileCheck2 className="summary-icon" size={24} /><h3>Reports Uploaded</h3></div>
           <div className="big-number">{totals.reports ?? 0}</div>
         </div>
+
         <div className="summary-card">
           <div className="card-header-with-icon"><Building2 className="summary-icon" size={24} /><h3>Completion Rate</h3></div>
-          <div className="big-number">{data.completionRate ?? 0}%</div>
+          <div className="big-number">{completionRate.rate}%</div>
         </div>
       </div>
 
       <div className="charts-grid">
-        <div className="chart-card full-width">
-          <h3>Views Uploaded (CC/MLO x Left/Right)</h3>
-          <div className="chart-wrapper">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.viewTypeCounts || []} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#14868C" strokeOpacity={0.1} />
-                <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#14868C', fontFamily: 'Poppins', fontWeight: 500 }} />
-                <YAxis tick={{ fontSize: 12, fill: '#14868C', fontFamily: 'Poppins', fontWeight: 500 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="count" name="Uploaded" radius={[4, 4, 0, 0]}>
-                  {(data.viewTypeCounts || []).map((entry, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="chart-card full-width">
+        {/* <div className="chart-card full-width">
           <h3>Mammogram Completeness</h3>
           <div className="chart-wrapper pie-wrapper">
             <ResponsiveContainer width="100%" height="100%">
@@ -236,21 +236,22 @@ const MammogramStats = () => {
                   data={data.setCompleteness || []}
                   cx="50%" cy="50%" outerRadius="80%"
                   dataKey="value" nameKey="name"
-                  label={({ name, percent }) => percent > 0 ? `${name}: ${(percent * 100).toFixed(0)}%` : ''}
+                  labelLine={false}
+                  label={CustomPieLabel}
                 >
                   {(data.setCompleteness || []).map((entry, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip content={<CustomTooltip />} />
-                <Legend verticalAlign="bottom" height={36} />
+                <Legend verticalAlign="bottom" height={36} content={<CustomLegend />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </div> */}
 
         <div className="chart-card full-width">
-          <h3>Hospitals by Machine Type (CR / DR)</h3>
+          <h3>Machine Modality (CR / DR)</h3>
           <div className="chart-wrapper pie-wrapper">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -261,7 +262,8 @@ const MammogramStats = () => {
                   }))}
                   cx="50%" cy="50%" outerRadius="80%"
                   dataKey="value" nameKey="displayName"
-                  label={({ payload, percent }) => percent > 0 ? `${payload.name}: ${(percent * 100).toFixed(0)}%` : ''}
+                  labelLine={false}
+                  label={CustomPieLabel}
                 >
                   {(data.hospitalTypeBreakdown || []).map((entry, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
@@ -269,34 +271,11 @@ const MammogramStats = () => {
                 </Pie>
                 {/* CustomTooltip reads row.hospitals to list institutes in this slice on hover */}
                 <Tooltip content={<CustomTooltip />} />
-                <Legend verticalAlign="bottom" height={36} />
+                <Legend verticalAlign="bottom" height={36} content={<CustomLegend />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
-
-{/* 
-        <div className="chart-card full-width">
-          <h3>Report Completeness</h3>
-          <div className="chart-wrapper pie-wrapper">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data.reportCompleteness || []}
-                  cx="50%" cy="50%" outerRadius="80%"
-                  dataKey="value" nameKey="name"
-                  label={({ name, percent }) => percent > 0 ? `${name}: ${(percent * 100).toFixed(0)}%` : ''}
-                >
-                  {(data.reportCompleteness || []).map((entry, i) => (
-                    <Cell key={i} fill={['#14868C', '#fb923c'][i % 2]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend verticalAlign="bottom" height={36} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div> */}
 
         <div className="chart-card full-width">
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
