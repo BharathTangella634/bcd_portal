@@ -87,11 +87,24 @@
   stroke-linejoin: round;
   stroke-width: 0.85;
   vector-effect: non-scaling-stroke;
-  transition: fill 0.2s ease;
+  transition: fill 0.25s ease, stroke 0.25s ease;
+  cursor: pointer;
+  outline: none; 
+}
+
+.india-state:focus,
+.india-state:focus-visible {
+  outline: none;
 }
 
 .india-state:hover {
   fill: rgba(252, 231, 243, 0.96);
+}
+
+.india-state.selected {
+  fill: #be185d;
+  stroke: #831843;
+  stroke-width: 0.85;
 }
 
 .india-hospital-marker {
@@ -208,6 +221,101 @@
   padding-top: 0.45rem;
 }
 
+.india-info-panel {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 6;
+  min-width: 220px;
+  max-width: min(270px, calc(100% - 2rem));
+  background: #ffffff;
+  border: 1px solid rgba(219, 39, 119, 0.14);
+  border-radius: 16px;
+  box-shadow: 0 16px 32px rgba(190, 24, 93, 0.12);
+  padding: 1.1rem 1.15rem;
+  font-family: 'Poppins', sans-serif;
+  animation: panel-fade-in 0.2s ease;
+}
+
+@keyframes panel-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.info-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.9rem;
+}
+
+.info-panel-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(219, 39, 119, 0.1);
+  color: #be185d;
+  flex-shrink: 0;
+}
+
+.info-panel-label {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #be185d;
+}
+
+.info-panel-header h4 {
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #831843;
+}
+
+.info-panel-count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  background: rgba(219, 39, 119, 0.07);
+  border-radius: 12px;
+  padding: 0.65rem 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.count-number {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #be185d;
+}
+
+.count-label {
+  font-size: 0.76rem;
+  color: #526376;
+}
+
+.info-panel-message {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #526376;
+  line-height: 1.4;
+}
+
+.hospital-item-name {
+  font-size: 12px;
+  color: #444;
+}
+
 @media (max-width: 768px) {
   .public-map-wrap {
     min-height: clamp(300px, 70vw, 500px);
@@ -217,5 +325,12 @@
 @media (max-width: 480px) {
   .public-map-wrap {
     min-height: 280px;
+  }
+
+  .india-info-panel {
+    top: 0.75rem;
+    right: 0.75rem;
+    left: 0.75rem;
+    max-width: none;
   }
 }

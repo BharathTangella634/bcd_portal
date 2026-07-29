@@ -109,9 +109,6 @@ const CustomLegend = ({ payload }) => (
   </ul>
 );
 
-
-// Institute column removed — table now just lists machines per row without the
-// hospital/institute grouping column.
 const InstituteMachineTable = ({ byHospital }) => {
   const hospitals = byHospital || [];
 
@@ -123,6 +120,7 @@ const InstituteMachineTable = ({ byHospital }) => {
 
     machines.forEach((m) => {
       rows.push({
+        institute: h.short_name || h.hospital_name || h.name,
         machine_name: m.machine_name,
         make: m.make,
         technology: m.technology,
@@ -135,20 +133,24 @@ const InstituteMachineTable = ({ byHospital }) => {
     return <p style={{ textAlign: 'center', color: '#6b7280' }}>No institute data available.</p>;
   }
 
-  return (
+return (
     <div className="chart-wrapper" style={{ overflowX: 'auto', height: 'auto' }}>
       <table className="institute-machine-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ backgroundColor: '#14868C', color: '#fff' }}>
+            <th style={thStyle}>Institute</th>
             <th style={thStyle}>Machine</th>
             <th style={thStyle}>Make</th>
             <th style={thStyle}>Technology</th>
-            <th style={thStyle}>No. of Machines</th>
+            <th style={{ ...thStyle, textAlign: 'center' }}>No. of Machines</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} style={{ borderBottom: '1px solid #e5e7eb' }}>
+              <td style={{ ...tdStyle, backgroundColor: '#ecfdf5', fontWeight: 600, color: '#1f2937' }}>
+                {row.institute}
+              </td>
               <td style={tdStyle}>{row.machine_name}</td>
               <td style={tdStyle}>{row.make}</td>
               <td style={tdStyle}>{row.technology}</td>
@@ -291,121 +293,89 @@ const MammogramStats = () => {
               </span>
             </div>
           </div>
-          <style>{`
-            .hospital-chart-scroll {
-              scrollbar-width: none;
-            }
-            .hospital-chart-scroll::-webkit-scrollbar {
-              height: 8px;
-            }
-            .hospital-chart-scroll::-webkit-scrollbar-thumb {
-              background: transparent;
-              border-radius: 4px;
-            }
-            .hospital-chart-scroll::-webkit-scrollbar-track {
-              background: transparent;
-            }
-            .hospital-chart-scroll:hover {
-              scrollbar-width: thin;
-              scrollbar-color: #9ca3af transparent;
-            }
-            .hospital-chart-scroll:hover::-webkit-scrollbar-thumb {
-              background: #9ca3af;
-            }
-          `}</style>
-          <div
-            className="chart-wrapper hospital-chart-scroll"
-            style={{ overflowX: "auto", overflowY: "hidden" }}
-          >
-            <div
-              style={{
-                width: `${Math.max((data.byHospital?.length || 0) * 130, 900)}px`,
-                height: "100%",
-              }}
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={data.byHospital || []}
-                  margin={{ top: 24, right: 30, left: 20, bottom: 80 }}
-                  barCategoryGap={12}
-                  barGap={2}
+
+         <div className="chart-wrapper" style={{ height: "550px" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={data.byHospital || []}
+                margin={{ top: 24, right: 30, left: 20, bottom: 80 }}
+                barCategoryGap="15%"
+                barGap={2}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="#059669"
+                  strokeOpacity={0.1}
+                />
+
+                <XAxis
+                  dataKey="short_name"
+                  interval={0}
+                  angle={-40}
+                  textAnchor="end"
+                  height={80}
+                  axisLine={{ stroke: '#059669', strokeOpacity: 0.2 }}
+                  tickLine={false}
+                  tick={{
+                    fontSize: 11,
+                    fill: "#059669",
+                    fontFamily: "Poppins",
+                    fontWeight: 500,
+                  }}
+                />
+
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{
+                    fontSize: 12,
+                    fill: "#059669",
+                    fontFamily: "Poppins",
+                    fontWeight: 500,
+                  }}
+                />
+
+                <Tooltip
+                  content={<CustomTooltip />}
+                  cursor={{ fill: '#059669', fillOpacity: 0.06 }}
+                />
+                <Legend
+                  verticalAlign="bottom"
+                  height={36}
+                  iconType="circle"
+                  wrapperStyle={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 500, color: '#374151' }}
+                />
+
+                <Bar
+                  dataKey="dicom_count"
+                  name="DICOM Views"
+                  fill="#6ee7b7"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={80}
                 >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#059669"
-                    strokeOpacity={0.1}
-                  />
-
-                  <XAxis
-                    dataKey="short_name"
-                    interval={0}
-                    angle={-40}
-                    textAnchor="end"
-                    height={80}
-                    axisLine={{ stroke: '#059669', strokeOpacity: 0.2 }}
-                    tickLine={false}
-                    tick={{
-                      fontSize: 11,
-                      fill: "#059669",
-                      fontFamily: "Poppins",
-                      fontWeight: 500,
-                    }}
-                  />
-
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{
-                      fontSize: 12,
-                      fill: "#059669",
-                      fontFamily: "Poppins",
-                      fontWeight: 500,
-                    }}
-                  />
-
-                  <Tooltip
-                    content={<CustomTooltip />}
-                    cursor={{ fill: '#059669', fillOpacity: 0.06 }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    height={36}
-                    iconType="circle"
-                    wrapperStyle={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 500, color: '#374151' }}
-                  />
-
-                  {/* Separate (grouped) bars instead of stacked — no stackId */}
-                  <Bar
+                  <LabelList
                     dataKey="dicom_count"
-                    name="DICOM Views"
-                    fill="#6ee7b7"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={80}
-                  >
-                    <LabelList
-                      dataKey="dicom_count"
-                      position="top"
-                      style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#059669' }}
-                    />
-                  </Bar>
+                    position="top"
+                    style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#059669' }}
+                  />
+                </Bar>
 
-                  <Bar
+                <Bar
+                  dataKey="report_count"
+                  name="Reports"
+                  fill="#fb923c"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={80}
+                >
+                  <LabelList
                     dataKey="report_count"
-                    name="Reports"
-                    fill="#fb923c"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={80}
-                  >
-                    <LabelList
-                      dataKey="report_count"
-                      position="top"
-                      style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#c2620d' }}
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+                    position="top"
+                    style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#c2620d' }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
