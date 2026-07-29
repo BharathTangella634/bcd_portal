@@ -147,10 +147,17 @@ const IndiaMap = () => {
       setActiveMarker(null);
     }
   }, []);
-
+  
   if (loading) return <div className="india-map-loading">Loading map...</div>;
   if (error) return <div className="india-map-error">{error}</div>;
   if (!mapData) return null;
+
+  const viewBoxStr = mapData.viewBox || '0 0 640 720';
+  const vbParts = viewBoxStr.split(/\s+/).map(Number);
+  const mapAspect =
+    vbParts.length === 4 && vbParts[2] && vbParts[3]
+      ? `${vbParts[2]} / ${vbParts[3]}`
+      : '640 / 720';
 
   const grouped = new Map();
   for (const h of hospitals) {
@@ -179,10 +186,11 @@ const IndiaMap = () => {
       <div className="public-map-wrap" ref={wrapRef} onClick={handleWrapClick}>
         <svg
           className="india-map"
-          viewBox={mapData.viewBox || '0 0 640 720'}
+          viewBox={viewBoxStr}
           preserveAspectRatio="xMidYMid meet"
           role="img"
           aria-label="India map showing partner hospital locations"
+          style={{ '--map-aspect': mapAspect }}
         >
           <g className="india-map-states">
             {(mapData.states || []).map((s, i) =>

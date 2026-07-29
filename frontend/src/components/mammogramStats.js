@@ -534,88 +534,93 @@ const MammogramStats = () => {
             </div>
           </div>
 
-          <div className="chart-wrapper" style={{ height: "550px" }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={data.byHospital || []}
-                margin={{ top: 24, right: 30, left: 20, bottom: 80 }}
-                barCategoryGap="15%"
-                barGap={2}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#059669"
-                  strokeOpacity={0.1}
-                />
-
-                <XAxis
-                  dataKey="short_name"
-                  interval={0}
-                  angle={-40}
-                  textAnchor="end"
-                  height={80}
-                  axisLine={{ stroke: '#059669', strokeOpacity: 0.2 }}
-                  tickLine={false}
-                  tick={{
-                    fontSize: 11,
-                    fill: "#059669",
-                    fontFamily: "Poppins",
-                    fontWeight: 500,
-                  }}
-                />
-
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{
-                    fontSize: 12,
-                    fill: "#059669",
-                    fontFamily: "Poppins",
-                    fontWeight: 500,
-                  }}
-                />
-
-                <Tooltip
-                  content={<CustomTooltip />}
-                  cursor={{ fill: '#059669', fillOpacity: 0.06 }}
-                />
-                <Legend
-                  verticalAlign="bottom"
-                  height={36}
-                  iconType="circle"
-                  wrapperStyle={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 500, color: '#374151' }}
-                />
-
-                <Bar
-                  dataKey="dicom_count"
-                  name="DICOM Views"
-                  fill="#6ee7b7"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={80}
+          <div
+            className="chart-wrapper hospital-chart-scroll"
+            style={{ height: "550px", '--hospital-count': (data.byHospital || []).length }}
+          >
+            <div className="hospital-chart-inner">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={data.byHospital || []}
+                  margin={{ top: 24, right: 30, left: 20, bottom: 80 }}
+                  barCategoryGap="15%"
+                  barGap={2}
                 >
-                  <LabelList
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="#059669"
+                    strokeOpacity={0.1}
+                  />
+
+                  <XAxis
+                    dataKey="short_name"
+                    interval={0}
+                    angle={-40}
+                    textAnchor="end"
+                    height={80}
+                    axisLine={{ stroke: '#059669', strokeOpacity: 0.2 }}
+                    tickLine={false}
+                    tick={{
+                      fontSize: 11,
+                      fill: "#059669",
+                      fontFamily: "Poppins",
+                      fontWeight: 500,
+                    }}
+                  />
+
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fontSize: 12,
+                      fill: "#059669",
+                      fontFamily: "Poppins",
+                      fontWeight: 500,
+                    }}
+                  />
+
+                  <Tooltip
+                    content={<CustomTooltip />}
+                    cursor={{ fill: '#059669', fillOpacity: 0.06 }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    iconType="circle"
+                    wrapperStyle={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 500, color: '#374151' }}
+                  />
+
+                  <Bar
                     dataKey="dicom_count"
-                    position="top"
-                    style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#059669' }}
-                  />
-                </Bar>
+                    name="DICOM Views"
+                    fill="#6ee7b7"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={80}
+                  >
+                    <LabelList
+                      dataKey="dicom_count"
+                      position="top"
+                      style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#059669' }}
+                    />
+                  </Bar>
 
-                <Bar
-                  dataKey="report_count"
-                  name="Reports"
-                  fill="#fb923c"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={80}
-                >
-                  <LabelList
+                  <Bar
                     dataKey="report_count"
-                    position="top"
-                    style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#c2620d' }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                    name="Reports"
+                    fill="#fb923c"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={80}
+                  >
+                    <LabelList
+                      dataKey="report_count"
+                      position="top"
+                      style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#c2620d' }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
         {/* <div className="chart-card full-width">
