@@ -13,6 +13,8 @@ const CR_DR_LABELS = {
   Unassigned: 'Unassigned',
 };
 
+const ORBIT_COLORS = ['#2563eb', '#0ea5a3', '#22c55e', '#3b82f6', '#0d9488', '#16a34a'];
+
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null;
 
@@ -109,73 +111,334 @@ const CustomLegend = ({ payload }) => (
   </ul>
 );
 
+// Builds a regular hexagon point string, matching the hexagon in the TANUH logo
+function hexPoints(cx, cy, r) {
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 180) * (60 * i - 30);
+    pts.push(`${(cx + r * Math.cos(angle)).toFixed(2)},${(cy + r * Math.sin(angle)).toFixed(2)}`);
+  }
+  return pts.join(' ');
+}
+
+const thStyle = {
+  padding: '10px 12px',
+  textAlign: 'left',
+  fontFamily: 'Poppins',
+  fontSize: 12.5,
+  fontWeight: 600,
+  color: '#14868C',
+  borderBottom: '2px solid rgba(20,134,140,0.15)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.4px',
+};
+
+const tdStyle = {
+  padding: '9px 12px',
+  fontFamily: 'Poppins',
+  fontSize: 13,
+  color: '#374151',
+  borderBottom: '1px solid #f1f1f1',
+};
+
 const InstituteMachineTable = ({ byHospital }) => {
-  const hospitals = byHospital || [];
+  const [hover, setHover] = useState(null); // { institute, machines, x, y }
+  const wrapperRef = React.useRef(null);
 
-  const rows = [];
-  hospitals.forEach((h) => {
-    const machines = h.machines && h.machines.length > 0
-      ? h.machines
-      : [{ machine_name: '—', make: '—', technology: '—', machine_count: 0 }];
+  const hospitals = (byHospital || [])
+    .map((h) => ({
+      name: h.short_name || h.hospital_name || h.name || 'Unknown',
+      machines: h.machines && h.machines.length > 0 ? h.machines : [],
+    }))
+    .filter((h) => h.machines.length > 0);
 
-    machines.forEach((m) => {
-      rows.push({
-        institute: h.short_name || h.hospital_name || h.name,
-        machine_name: m.machine_name,
-        make: m.make,
-        technology: m.technology,
-        machine_count: m.machine_count,
-      });
-    });
-  });
-
-  if (rows.length === 0) {
+  if (hospitals.length === 0) {
     return <p style={{ textAlign: 'center', color: '#6b7280' }}>No institute data available.</p>;
   }
 
-return (
-    <div className="chart-wrapper" style={{ overflowX: 'auto', height: 'auto' }}>
-      <table className="institute-machine-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+  const handleEnter = (e, hospital) => {
+    const wrapperRect = wrapperRef.current.getBoundingClientRect();
+    const cellRect = e.currentTarget.getBoundingClientRect();
+    setHover({
+      institute: hospital.name,
+      machines: hospital.machines,
+      x: cellRect.left - wrapperRect.left + cellRect.width / 2,
+      y: cellRect.top - wrapperRect.top,
+    });
+  };
+
+  const handleLeave = () => setHover(null);
+
+  return (
+    <div className="institute-table-wrapper" ref={wrapperRef}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
-          <tr style={{ backgroundColor: '#14868C', color: '#fff' }}>
+          <tr>
             <th style={thStyle}>Institute</th>
             <th style={thStyle}>Machine</th>
             <th style={thStyle}>Make</th>
             <th style={thStyle}>Technology</th>
-            <th style={{ ...thStyle, textAlign: 'center' }}>No. of Machines</th>
+            <th style={thStyle}>No. of Machine</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid #e5e7eb' }}>
-              <td style={{ ...tdStyle, backgroundColor: '#ecfdf5', fontWeight: 600, color: '#1f2937' }}>
-                {row.institute}
-              </td>
-              <td style={tdStyle}>{row.machine_name}</td>
-              <td style={tdStyle}>{row.make}</td>
-              <td style={tdStyle}>{row.technology}</td>
-              <td style={{ ...tdStyle, textAlign: 'center' }}>{row.machine_count}</td>
-            </tr>
-          ))}
+          {hospitals.map((h, hi) =>
+            h.machines.map((m, mi) => (
+              <tr key={`${hi}-${mi}`}>
+                {mi === 0 && (
+                  <td
+                    style={{
+                      ...tdStyle,
+                      fontWeight: 600,
+                      color: '#14868C',
+                      cursor: 'default',
+                    }}
+                    rowSpan={h.machines.length}
+                    onMouseEnter={(e) => handleEnter(e, h)}
+                    onMouseLeave={handleLeave}
+                  >
+                    {h.name}
+                  </td>
+                )}
+                <td style={tdStyle}>{m.machine_name}</td>
+                <td style={tdStyle}>{m.make || '-'}</td>
+                <td style={tdStyle}>{m.technology || '-'}</td>
+                <td style={tdStyle}>{m.machine_count ?? 0}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
+
+      {hover && (
+        <div
+          className="institute-hover-tooltip"
+          style={{ left: hover.x, top: hover.y }}
+        >
+          <div className="institute-hover-title">{hover.institute}</div>
+          <ul className="institute-hover-list">
+            {hover.machines.map((m, i) => (
+              <li key={i} className="institute-hover-item">
+                <span className="institute-hover-machine">{m.machine_name}</span>
+                <span className="institute-hover-meta">
+                  {[m.make, m.technology].filter(Boolean).join(' · ')}
+                  {m.machine_count ? ` · x${m.machine_count}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };
 
-const thStyle = {
-  padding: '10px 14px',
-  textAlign: 'left',
-  fontFamily: 'Poppins',
-  fontWeight: 600,
-  fontSize: 13,
-};
+const InstituteOrbitCloud = ({ byHospital }) => {
+  const [active, setActive] = useState(null);
+  const [hoverInfo, setHoverInfo] = useState(null);
+  const wrapperRef = React.useRef(null);
 
-const tdStyle = {
-  padding: '10px 14px',
-  fontFamily: 'Poppins',
-  fontSize: 13,
-  color: '#374151',
+  const hospitals = (byHospital || [])
+    .map((h) => {
+      const machines = h.machines && h.machines.length > 0 ? h.machines : [];
+      const total = machines.reduce((s, m) => s + (m.machine_count || 0), 0);
+      return {
+        name: h.short_name || h.hospital_name || h.name || 'Unknown',
+        total,
+        machines,
+      };
+    })
+    .filter((h) => h.machines.length > 0);
+
+  if (hospitals.length === 0) {
+    return <p style={{ textAlign: 'center', color: '#6b7280' }}>No institute data available.</p>;
+  }
+
+  const NODE_RADIUS = 30; // slightly bigger nodes
+  const size = 640; // increased from 580
+  const center = size / 2;
+  const orbitRadius = size / 2 - 105;
+
+  const nodes = hospitals.map((h, i) => {
+    const angle = (i / hospitals.length) * 2 * Math.PI - Math.PI / 2;
+    return {
+      ...h,
+      x: center + orbitRadius * Math.cos(angle),
+      y: center + orbitRadius * Math.sin(angle),
+      r: NODE_RADIUS,
+      color: ORBIT_COLORS[i % ORBIT_COLORS.length],
+    };
+  });
+
+  const handleEnter = (e, n) => {
+    setActive(n);
+    const wrapperRect = wrapperRef.current.getBoundingClientRect();
+    const targetRect = e.currentTarget.getBoundingClientRect();
+    setHoverInfo({
+      hospital: n,
+      x: targetRect.left - wrapperRect.left + targetRect.width / 2,
+      y: targetRect.top - wrapperRect.top,
+    });
+  };
+
+  const handleLeave = () => {
+    setActive(null);
+    setHoverInfo(null);
+  };
+
+  return (
+    <div
+      className="orbit-cloud"
+      style={{
+        background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)',
+        borderRadius: 16,
+        border: '1px solid #e2e8f0',
+        marginTop: 0,
+        paddingTop: 0,
+      }}
+    >
+      <div
+        className="orbit-cloud-svg-wrap"
+        ref={wrapperRef}
+        style={{ position: 'relative', minHeight: 480, marginTop: 0 }}
+      >
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${size} ${size}`}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <defs>
+            <linearGradient id="orbitHexGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#1d4ed8" />
+              <stop offset="100%" stopColor="#22c55e" />
+            </linearGradient>
+          </defs>
+
+          {nodes.map((n, i) => (
+            <line
+              key={`spoke-${i}`}
+              x1={center} y1={center} x2={n.x} y2={n.y}
+              stroke={n.color} strokeOpacity={active && active.name === n.name ? 0.7 : 0.28}
+              strokeWidth={active && active.name === n.name ? 2.5 : 1.5}
+            />
+          ))}
+
+          {nodes.map((n, i) => {
+            const next = nodes[(i + 1) % nodes.length];
+            return (
+              <line
+                key={`ring-${i}`}
+                x1={n.x} y1={n.y} x2={next.x} y2={next.y}
+                stroke="#94a3b8" strokeOpacity={0.25} strokeWidth={1}
+              />
+            );
+          })}
+
+          <polygon
+            points={hexPoints(center, center, 60)}
+            fill="#ffffff"
+            stroke="url(#orbitHexGradient)"
+            strokeWidth={5}
+          />
+          <text
+            x={center} y={center - 4}
+            textAnchor="middle"
+            style={{ fontFamily: 'Poppins', fontWeight: 700, fontSize: 17, fill: '#0f766e' }}
+          >
+            {hospitals.length}
+          </text>
+          <text
+            x={center} y={center + 17}
+            textAnchor="middle"
+            style={{ fontFamily: 'Poppins', fontWeight: 500, fontSize: 11, fill: '#64748b' }}
+          >
+            Institutes
+          </text>
+
+          {nodes.map((n, i) => (
+            <g
+              key={`node-${i}`}
+              onMouseEnter={(e) => handleEnter(e, n)}
+              onMouseLeave={handleLeave}
+              onClick={(e) => handleEnter(e, n)}
+              style={{ cursor: 'pointer' }}
+            >
+              <circle
+                cx={n.x} cy={n.y} r={n.r}
+                fill={n.color}
+                fillOpacity={active && active.name === n.name ? 1 : 0.85}
+                stroke="#fff"
+                strokeWidth={active && active.name === n.name ? 3 : 2}
+              />
+              <text
+                x={n.x} y={n.y + 4}
+                textAnchor="middle"
+                style={{ fontFamily: 'Poppins', fontWeight: 700, fontSize: Math.max(11, n.r * 0.5), fill: '#fff' }}
+              >
+                {n.total}
+              </text>
+            </g>
+          ))}
+
+          {nodes.map((n, i) => (
+            <text
+              key={`label-${i}`}
+              x={n.x}
+              y={n.y + n.r + 17}
+              textAnchor="middle"
+              onMouseEnter={(e) => handleEnter(e, n)}
+              onMouseLeave={handleLeave}
+              style={{
+                fontFamily: 'Poppins',
+                fontWeight: active && active.name === n.name ? 700 : 500,
+                fontSize: 11.5,
+                fill: active && active.name === n.name ? '#111827' : '#374151',
+                cursor: 'pointer',
+              }}
+            >
+              {n.name.length > 14 ? `${n.name.slice(0, 13)}…` : n.name}
+            </text>
+          ))}
+        </svg>
+
+        {hoverInfo && (
+          <div
+            className="institute-hover-tooltip"
+            style={{ left: hoverInfo.x, top: hoverInfo.y, minWidth: 240, padding: '12px 14px' }}
+          >
+            {hoverInfo.hospital.machines.map((m, mi) => (
+              <div
+                key={mi}
+                style={{
+                  marginBottom: mi < hoverInfo.hospital.machines.length - 1 ? 10 : 0,
+                  paddingBottom: mi < hoverInfo.hospital.machines.length - 1 ? 10 : 0,
+                  borderBottom: mi < hoverInfo.hospital.machines.length - 1 ? '1px solid #e5e7eb' : 'none',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
+                  <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>Machine:</span>
+                  <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.machine_name}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
+                  <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>Make:</span>
+                  <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.make || '-'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
+                  <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>Technology:</span>
+                  <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.technology || '-'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
+                  <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>No. of Machines:</span>
+                  <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.machine_count ?? 0}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 const MammogramStats = () => {
@@ -229,29 +492,6 @@ const MammogramStats = () => {
       </div>
 
       <div className="charts-grid">
-        {/* <div className="chart-card full-width">
-          <h3>Mammogram Completeness</h3>
-          <div className="chart-wrapper pie-wrapper">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data.setCompleteness || []}
-                  cx="50%" cy="50%" outerRadius="80%"
-                  dataKey="value" nameKey="name"
-                  labelLine={false}
-                  label={CustomPieLabel}
-                >
-                  {(data.setCompleteness || []).map((entry, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend verticalAlign="bottom" height={36} content={<CustomLegend />} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div> */}
-
         <div className="chart-card full-width">
           <h3>Machine Modality (CR / DR)</h3>
           <div className="chart-wrapper pie-wrapper">
@@ -294,7 +534,7 @@ const MammogramStats = () => {
             </div>
           </div>
 
-         <div className="chart-wrapper" style={{ height: "550px" }}>
+          <div className="chart-wrapper" style={{ height: "550px" }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={data.byHospital || []}
@@ -378,11 +618,12 @@ const MammogramStats = () => {
             </ResponsiveContainer>
           </div>
         </div>
-
-        <div className="chart-card full-width">
-          <h3>Machines by Institute</h3>
-          <InstituteMachineTable byHospital={data.byHospital} />
-        </div>
+        {/* <div className="chart-card full-width">
+          <h3 style={{ marginBottom:12, color: '#14868C', fontWeight: 800,fontSize: '1.4rem' }}>
+            Machines by Institute
+          </h3>
+          <InstituteOrbitCloud byHospital={data.byHospital} />
+        </div> */}
       </div>
     </div>
   );
