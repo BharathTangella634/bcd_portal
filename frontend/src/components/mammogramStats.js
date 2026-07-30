@@ -428,10 +428,10 @@ const InstituteOrbitCloud = ({ byHospital }) => {
                   <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>Technology:</span>
                   <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.technology || '-'}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
+                {/* <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
                   <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>No. of Machines:</span>
                   <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.machine_count ?? 0}</span>
-                </div>
+                </div> */}
               </div>
             ))}
           </div>
@@ -623,12 +623,12 @@ const MammogramStats = () => {
             </div>
           </div>
         </div>
-        {/* <div className="chart-card full-width">
+        <div className="chart-card full-width">
           <h3 style={{ marginBottom:12, color: '#14868C', fontWeight: 800,fontSize: '1.4rem' }}>
             Machines by Institute
           </h3>
           <InstituteOrbitCloud byHospital={data.byHospital} />
-        </div> */}
+        </div>
       </div>
     </div>
   );
