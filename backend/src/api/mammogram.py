@@ -33,5 +33,7 @@ def get_mammogram_portal_stats(
             "completionRate": {"viewsUploaded": 0, "totalSubjects": 0, "rate": 0.0},
             "byHospital": [],
             "hospitalTypeBreakdown": [],
+            "reportsByHospital": [],
+            "biradsByInstituteAndSide": [],
             "error": str(e),
         }

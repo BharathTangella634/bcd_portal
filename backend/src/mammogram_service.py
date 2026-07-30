@@ -1,4 +1,6 @@
 import logging
+from collections import Counter, defaultdict
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, text
 from .models.models import Attachment, DoctorAssessment, Hospital, PatientSession, Machine
@@ -19,6 +21,9 @@ REPORT_FILE_TYPES = [
 
 EXCLUDED_HOSPITAL_NAMES = ('Test', 'Tanuh Foundation')
 INSTITUTE_QUESTIONS = ('Institute Name', 'Institute Name:', 'Enter the Hospital ID(If any, else leave):', 'Q45')
+
+VALID_BIRADS = {'0', '1', '2', '3', '4', '5'}
+
 
 def _get_institute_filter():
     return """
@@ -285,6 +290,104 @@ def get_completion_rate(db: Session, questionnaire_db: Session) -> dict:
     }
 
 
+def _extract_side_birads(clinical_findings):
+    """
+    Pulls (left_birads, right_birads) out of a DoctorAssessment.clinical_findings
+    JSON value.
+
+    ASSUMPTION: clinical_findings stores BIRADS per side. This handles the
+    most likely shapes:
+      1) {"left": {"birads": "4A"}, "right": {"birads": "2"}}
+      2) {"left_birads": "4A", "right_birads": "2"}
+      3) {"left": "4A", "right": "2"}
+
+    If the real JSON uses different key names, only this function needs to
+    change — aggregation and the endpoint stay the same.
+    """
+    left_val = None
+    right_val = None
+
+    if isinstance(clinical_findings, dict):
+        left_raw = clinical_findings.get('left')
+        right_raw = clinical_findings.get('right')
+
+        if isinstance(left_raw, dict):
+            left_val = left_raw.get('birads') or left_raw.get('mammo_birads')
+        elif isinstance(left_raw, str):
+            left_val = left_raw
+
+        if isinstance(right_raw, dict):
+            right_val = right_raw.get('birads') or right_raw.get('mammo_birads')
+        elif isinstance(right_raw, str):
+            right_val = right_raw
+
+        # fallback: flat left_birads / right_birads keys
+        left_val = left_val or clinical_findings.get('left_birads')
+        right_val = right_val or clinical_findings.get('right_birads')
+
+    return left_val, right_val
+
+
+def get_birads_by_institute_and_side(db: Session) -> list:
+    """
+    Returns BIRADS distribution per hospital, split into left/right,
+    sourced from DoctorAssessment.clinical_findings.
+    """
+    rows = db.query(
+        Hospital.id,
+        Hospital.name,
+        Hospital.short_name,
+        DoctorAssessment.clinical_findings,
+    ).join(
+        DoctorAssessment, DoctorAssessment.hospital_id == Hospital.id
+    ).filter(
+        ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES)),
+        DoctorAssessment.clinical_findings.isnot(None),
+    ).all()
+
+    by_institute = defaultdict(lambda: {
+        'hospital_name': None,
+        'short_name': None,
+        'left_birads_counts': Counter(),
+        'right_birads_counts': Counter(),
+        'left_total': 0,
+        'right_total': 0,
+    })
+
+    for hosp_id, name, short_name, findings in rows:
+        entry = by_institute[hosp_id]
+        entry['hospital_name'] = name
+        entry['short_name'] = short_name or name
+
+        left_val, right_val = _extract_side_birads(findings)
+
+        if left_val:
+            entry['left_birads_counts'][left_val] += 1
+            entry['left_total'] += 1
+        if right_val:
+            entry['right_birads_counts'][right_val] += 1
+            entry['right_total'] += 1
+
+    result = []
+    for hosp_id, data in by_institute.items():
+        result.append({
+            'hospital_id': hosp_id,
+            'hospital_name': data['hospital_name'],
+            'short_name': data['short_name'],
+            'left': {
+                'total': data['left_total'],
+                'birads_counts': dict(data['left_birads_counts']),
+            },
+            'right': {
+                'total': data['right_total'],
+                'birads_counts': dict(data['right_birads_counts']),
+            },
+        })
+
+    result.sort(key=lambda r: (r['left']['total'] + r['right']['total']), reverse=True)
+    return result
+
+
 def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> dict:
     total_assessments = get_total_assessments_count(db)
     complete_sets = get_complete_sets_count(db)
@@ -298,6 +401,7 @@ def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> di
     by_hospital = get_mammogram_by_hospital(db)
     hospital_type_breakdown = get_hospital_type_breakdown(db)
     reports_by_hospital = get_reports_by_hospital(db)   # <-- now GCS-based
+    birads_by_institute_side = get_birads_by_institute_and_side(db)
 
     return {
         "totalAssessments": total_assessments,
@@ -318,4 +422,5 @@ def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> di
         "byHospital": by_hospital,
         "hospitalTypeBreakdown": hospital_type_breakdown,
         "reportsByHospital": reports_by_hospital,   # <-- now GCS-based
+        "biradsByInstituteAndSide": birads_by_institute_side,
     }

@@ -15,6 +15,20 @@ const CR_DR_LABELS = {
 
 const ORBIT_COLORS = ['#2563eb', '#0ea5a3', '#22c55e', '#3b82f6', '#0d9488', '#16a34a'];
 
+// BIRADS severity zones used to color the gauge arc (0 -> 6 scale)
+// Official BI-RADS color coding (matches the standard reference chart):
+// blue (incomplete) -> green (benign) -> yellow (probably benign) ->
+// orange (suspicious) -> red (highly suggestive / known malignancy).
+const BIRADS_ZONES = [
+  { from: 0, to: 1, color: '#b7c9e8' }, // 0 - incomplete
+  { from: 1, to: 2, color: '#0ea5a3' }, // 1 - negative
+  { from: 2, to: 3, color: '#6ee7b7' }, // 2 - benign
+  { from: 3, to: 4, color: '#fde047' }, // 3 - probably benign
+  { from: 4, to: 5, color: '#fb923c' }, // 4 - suspicious
+  { from: 5, to: 6, color: '#c0433e' }, // 5 - highly suggestive of malignancy
+  // { from: 6, to: 7, color: '#c0433e' }, // 6 - known biopsy-proven malignancy
+];
+
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null;
 
@@ -121,24 +135,349 @@ function hexPoints(cx, cy, r) {
   return pts.join(' ');
 }
 
-const thStyle = {
-  padding: '10px 12px',
-  textAlign: 'left',
-  fontFamily: 'Poppins',
-  fontSize: 12.5,
-  fontWeight: 600,
-  color: '#14868C',
-  borderBottom: '2px solid rgba(20,134,140,0.15)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.4px',
+/**
+ * Groups a single side's ('left' or 'right') birads_counts across ALL
+ * institutes into per-category totals, e.g. {"1": 42, "2": 18, ...}, plus
+ * the per-institute breakdown behind each category (for the hover tooltip).
+ * Sub-categories like "4A"/"4B"/"4C" collapse into their base number ("4").
+ */
+function ensureAllBiradsCategories(categories) {
+  const requiredCategories = ['0', '1', '2', '3', '4', '5'];
+
+  const categoryMap = Object.fromEntries(
+    categories.map((c) => [c.category, c])
+  );
+
+  return requiredCategories.map((category) => {
+    return (
+      categoryMap[category] || {
+        category,
+        total: 0,
+        perInstitute: [],
+      }
+    );
+  });
+}
+
+function aggregateCategoryCounts(biradsByInstituteAndSide, side) {
+  const categoryMap = {};
+
+  (biradsByInstituteAndSide || []).forEach((inst) => {
+    const counts = (inst[side] && inst[side].birads_counts) || {};
+    Object.entries(counts).forEach(([key, count]) => {
+      const num = parseFloat(key);
+      if (isNaN(num)) return;
+      const catKey = String(Math.trunc(num));
+      if (!categoryMap[catKey]) {
+        categoryMap[catKey] = { total: 0, perInstitute: [] };
+      }
+      categoryMap[catKey].total += count;
+      categoryMap[catKey].perInstitute.push({
+        name: inst.short_name || inst.hospital_name,
+        count,
+      });
+    });
+  });
+
+  return Object.entries(categoryMap)
+    .map(([category, val]) => ({
+      category,
+      total: val.total,
+      perInstitute: val.perInstitute.sort((a, b) => b.count - a.count),
+    }))
+    .sort((a, b) => parseInt(a.category, 10) - parseInt(b.category, 10));
+}
+
+function getZoneColor(value) {
+  const clamped = Math.max(0, Math.min(value, 6));
+  const zone = BIRADS_ZONES.find((z) => clamped >= z.from && clamped < z.to);
+  return (zone || BIRADS_ZONES[BIRADS_ZONES.length - 1]).color;
+}
+
+const BiradsBarRow = ({
+  category,
+  total,
+  maxTotal,
+  panelTitle,
+  perInstitute,
+}) => {
+  const [hover, setHover] = useState(false);
+
+  const color = getZoneColor(parseFloat(category));
+
+  const progress =
+    maxTotal > 0 ? Math.max(3, (total / maxTotal) * 100) : 3;
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        display: 'grid',
+        gridTemplateColumns: '42px minmax(0, 1fr) 60px',
+        alignItems: 'center',
+        gap: 14,
+        minHeight: 48,
+        marginBottom: 10,
+        padding: '6px 0',
+        zIndex: hover ? 1000 : 1,
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {/* BIRADS */}
+      <span
+        style={{
+          fontFamily: 'Poppins',
+          fontWeight: 700,
+          fontSize: 13,
+          color: '#334155',
+        }}
+      >
+        B{category}
+      </span>
+
+      {/* Progress bar */}
+      <div
+        style={{
+          width: '100%',
+          height: 26,
+          background: '#edf2f5',
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        <div
+          style={{
+            width: `${progress}%`,
+            height: '100%',
+            background: `linear-gradient(90deg, ${color}, ${color}cc)`,
+            transition: 'width 0.35s ease',
+            boxShadow: `0 3px 10px ${color}35`,
+          }}
+        />
+      </div>
+
+      {/* Count */}
+      <span
+        style={{
+          fontFamily: 'Poppins',
+          fontWeight: 700,
+          fontSize: 13,
+          color: '#14868C',
+          textAlign: 'right',
+        }}
+      >
+        {total}
+      </span>
+
+      {hover && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 300,
+            maxHeight: 260,
+            overflowY: 'auto',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 12px 30px rgba(15, 23, 42, 0.18)',
+            padding: '14px 16px',
+            zIndex: 9999,
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: 'Poppins',
+              fontWeight: 700,
+              fontSize: 12.5,
+              color: '#14868C',
+              marginBottom: 10,
+              paddingBottom: 8,
+              borderBottom: '1px solid #edf2f7',
+            }}
+          >
+            {panelTitle} · BI-RADS {category}
+          </div>
+
+          <div
+            style={{
+              fontFamily: 'Poppins',
+              fontSize: 11.5,
+              color: '#64748b',
+              marginBottom: 10,
+            }}
+          >
+            Total assessments: <strong>{total}</strong>
+          </div>
+
+          {perInstitute.map((inst, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                padding: '7px 0',
+                borderBottom:
+                  i < perInstitute.length - 1
+                    ? '1px solid #f1f5f9'
+                    : 'none',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: 'Poppins',
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: '#334155',
+                }}
+              >
+                {inst.name}
+              </span>
+
+              <span
+                style={{
+                  fontFamily: 'Poppins',
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  color: '#14868C',
+                }}
+              >
+                {inst.count}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
-const tdStyle = {
-  padding: '9px 12px',
-  fontFamily: 'Poppins',
-  fontSize: 13,
-  color: '#374151',
-  borderBottom: '1px solid #f1f1f1',
+
+const BiradsBarPanel = ({
+  title,
+  categories,
+  maxTotal,
+}) => {
+  const grandTotal = categories.reduce(
+    (sum, c) => sum + c.total,
+    0
+  );
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        border: '1px solid rgba(20, 134, 140, 0.12)',
+        borderRadius: 0,
+        padding: '30px 34px 34px',
+        background: '#ffffff',
+        boxShadow: '0 8px 24px rgba(15, 118, 110, 0.07)',
+        position: 'relative',
+        overflow: 'visible',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 4,
+          background:
+            'linear-gradient(90deg, #14868C, #38bdf8, #818cf8)',
+        }}
+      />
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 26,
+        }}
+      >
+        <div
+          style={{
+            fontFamily: 'Poppins',
+            fontWeight: 700,
+            fontSize: 17,
+            color: '#0f766e',
+          }}
+        >
+          {title}
+        </div>
+
+        <div
+          style={{
+            minWidth: 42,
+            padding: '7px 10px',
+            background: '#f0fdfa',
+            color: '#14868C',
+            fontFamily: 'Poppins',
+            fontWeight: 700,
+            fontSize: 12,
+            textAlign: 'center',
+          }}
+        >
+          {grandTotal}
+        </div>
+      </div>
+
+      {categories.map((c) => (
+        <BiradsBarRow
+          key={c.category}
+          category={c.category}
+          total={c.total}
+          maxTotal={maxTotal}
+          panelTitle={title}
+          perInstitute={c.perInstitute}
+        />
+      ))}
+    </div>
+  );
+};
+
+const BiradsCategorySection = ({ biradsByInstituteAndSide }) => {
+  const institutes = biradsByInstituteAndSide || [];
+
+  if (institutes.length === 0) {
+    return <p style={{ textAlign: 'center', color: '#6b7280' }}>No BIRADS data available.</p>;
+  }
+
+  const leftCategories = ensureAllBiradsCategories(
+    aggregateCategoryCounts(institutes, 'left')
+  );
+
+  const rightCategories = ensureAllBiradsCategories(
+    aggregateCategoryCounts(institutes, 'right')
+  );
+  const maxTotal = Math.max(
+    0,
+    ...leftCategories.map((c) => c.total),
+    ...rightCategories.map((c) => c.total)
+  );
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        gap: 20,
+        padding: '8px 0 20px',
+        width: '100%',
+        overflow: 'visible',
+      }}
+    >
+      <BiradsBarPanel title="Left BI-RADS" categories={leftCategories} maxTotal={maxTotal} />
+      <BiradsBarPanel title="Right BI-RADS" categories={rightCategories} maxTotal={maxTotal} />
+    </div>
+  );
 };
 
 const InstituteMachineTable = ({ byHospital }) => {
@@ -231,6 +570,26 @@ const InstituteMachineTable = ({ byHospital }) => {
       )}
     </div>
   );
+};
+
+const thStyle = {
+  padding: '10px 12px',
+  textAlign: 'left',
+  fontFamily: 'Poppins',
+  fontSize: 12.5,
+  fontWeight: 600,
+  color: '#14868C',
+  borderBottom: '2px solid rgba(20,134,140,0.15)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.4px',
+};
+
+const tdStyle = {
+  padding: '9px 12px',
+  fontFamily: 'Poppins',
+  fontSize: 13,
+  color: '#374151',
+  borderBottom: '1px solid #f1f1f1',
 };
 
 const InstituteOrbitCloud = ({ byHospital }) => {
@@ -428,10 +787,6 @@ const InstituteOrbitCloud = ({ byHospital }) => {
                   <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>Technology:</span>
                   <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.technology || '-'}</span>
                 </div>
-                {/* <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
-                  <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>No. of Machines:</span>
-                  <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.machine_count ?? 0}</span>
-                </div> */}
               </div>
             ))}
           </div>
@@ -517,6 +872,13 @@ const MammogramStats = () => {
               </PieChart>
             </ResponsiveContainer>
           </div>
+        </div>
+
+        <div className="chart-card full-width" style={{ padding: '28px 24px 32px' }}>
+          <h3 style={{ marginBottom: 6, color: '#14868C', fontWeight: 800, fontSize: '1.4rem' }}>
+            BIRADS — Left vs Right
+          </h3>
+          <BiradsCategorySection biradsByInstituteAndSide={data.biradsByInstituteAndSide} />
         </div>
 
         <div className="chart-card full-width">
@@ -623,12 +985,13 @@ const MammogramStats = () => {
             </div>
           </div>
         </div>
-        <div className="chart-card full-width">
+
+        {/* <div className="chart-card full-width">
           <h3 style={{ marginBottom:12, color: '#14868C', fontWeight: 800,fontSize: '1.4rem' }}>
             Machines by Institute
           </h3>
           <InstituteOrbitCloud byHospital={data.byHospital} />
-        </div>
+        </div> */}
       </div>
     </div>
   );
