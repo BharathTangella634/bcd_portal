@@ -49,9 +49,12 @@ class HospitalBase(BaseModel):
     address: Optional[str] = None
     pincode: Optional[str] = None
     state: Optional[str] = None
+    type: Optional[str] = None
 
 class HospitalCreate(HospitalBase):
     state: str
+    type: str
+    short_name: str
 
 class HospitalResponse(HospitalBase):
     id: str
