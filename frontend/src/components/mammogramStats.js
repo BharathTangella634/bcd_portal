@@ -194,288 +194,185 @@ function getZoneColor(value) {
   return (zone || BIRADS_ZONES[BIRADS_ZONES.length - 1]).color;
 }
 
-const BiradsBarRow = ({
-  category,
-  total,
-  maxTotal,
-  panelTitle,
-  perInstitute,
-}) => {
-  const [hover, setHover] = useState(false);
-
-  const color = getZoneColor(parseFloat(category));
-
-  const progress =
-    maxTotal > 0 ? Math.max(3, (total / maxTotal) * 100) : 3;
-
-  return (
-    <div
-      style={{
-        position: 'relative',
-        display: 'grid',
-        gridTemplateColumns: '42px minmax(0, 1fr) 60px',
-        alignItems: 'center',
-        gap: 14,
-        minHeight: 48,
-        marginBottom: 10,
-        padding: '6px 0',
-        zIndex: hover ? 1000 : 1,
-      }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-    >
-      {/* BIRADS */}
-      <span
-        style={{
-          fontFamily: 'Poppins',
-          fontWeight: 700,
-          fontSize: 13,
-          color: '#334155',
-        }}
-      >
-        B{category}
-      </span>
-
-      {/* Progress bar */}
-      <div
-        style={{
-          width: '100%',
-          height: 26,
-          background: '#edf2f5',
-          overflow: 'hidden',
-          position: 'relative',
-        }}
-      >
-        <div
+const BiradsLegend = ({ payload }) => (
+  <ul className="custom-legend">
+    {(payload || []).map((entry, index) => (
+      <li key={`item-${index}`} className="legend-item">
+        <span
           style={{
-            width: `${progress}%`,
-            height: '100%',
-            background: `linear-gradient(90deg, ${color}, ${color}cc)`,
-            transition: 'width 0.35s ease',
-            boxShadow: `0 3px 10px ${color}35`,
+            width: 11,
+            height: 11,
+            borderRadius: 2,
+            backgroundColor: entry.color,
+            display: 'inline-block',
           }}
         />
-      </div>
-
-      {/* Count */}
-      <span
-        style={{
-          fontFamily: 'Poppins',
-          fontWeight: 700,
-          fontSize: 13,
-          color: '#14868C',
-          textAlign: 'right',
-        }}
-      >
-        {total}
-      </span>
-
-      {hover && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 300,
-            maxHeight: 260,
-            overflowY: 'auto',
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 12px 30px rgba(15, 23, 42, 0.18)',
-            padding: '14px 16px',
-            zIndex: 9999,
-            pointerEvents: 'none',
-          }}
+        <span
+          className="legend-text"
+          style={{ color: '#14868C', fontWeight: 600, fontFamily: 'Poppins' }}
         >
-          <div
-            style={{
-              fontFamily: 'Poppins',
-              fontWeight: 700,
-              fontSize: 12.5,
-              color: '#14868C',
-              marginBottom: 10,
-              paddingBottom: 8,
-              borderBottom: '1px solid #edf2f7',
-            }}
-          >
-            {panelTitle} · BI-RADS {category}
-          </div>
+          {entry.value}
+        </span>
+      </li>
+    ))}
+  </ul>
+);
 
-          <div
-            style={{
-              fontFamily: 'Poppins',
-              fontSize: 11.5,
-              color: '#64748b',
-              marginBottom: 10,
-            }}
-          >
-            Total assessments: <strong>{total}</strong>
-          </div>
-
-          {perInstitute.map((inst, i) => (
-            <div
-              key={i}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                padding: '7px 0',
-                borderBottom:
-                  i < perInstitute.length - 1
-                    ? '1px solid #f1f5f9'
-                    : 'none',
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: 'Poppins',
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: '#334155',
-                }}
-              >
-                {inst.name}
-              </span>
-
-              <span
-                style={{
-                  fontFamily: 'Poppins',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  color: '#14868C',
-                }}
-              >
-                {inst.count}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-
-const BiradsBarPanel = ({
-  title,
-  categories,
-  maxTotal,
-}) => {
-  const grandTotal = categories.reduce(
-    (sum, c) => sum + c.total,
-    0
-  );
+const BiradsTooltip = ({ active, payload, label, categoryKey }) => {
+  if (!active || !payload || !payload.length) return null;
+  const prefix = categoryKey === 'density' ? 'BIRADS Density' : 'BIRADS';
 
   return (
-    <div
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        border: '1px solid rgba(20, 134, 140, 0.12)',
-        borderRadius: 0,
-        padding: '30px 34px 34px',
-        background: '#ffffff',
-        boxShadow: '0 8px 24px rgba(15, 118, 110, 0.07)',
-        position: 'relative',
-        overflow: 'visible',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 4,
-          background:
-            'linear-gradient(90deg, #14868C, #38bdf8, #818cf8)',
-        }}
-      />
-
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 26,
-        }}
-      >
-        <div
-          style={{
-            fontFamily: 'Poppins',
-            fontWeight: 700,
-            fontSize: 17,
-            color: '#0f766e',
-          }}
-        >
-          {title}
+    <div className="custom-tooltip">
+      <p className="tooltip-title">{prefix} {label}</p>
+      {payload.map((entry, i) => (
+        <div key={i} className="tooltip-item">
+          <span className="dot" style={{ backgroundColor: entry.color || entry.fill }} />
+          <span className="name">{entry.name}:</span>
+          <span className="value">{entry.value}</span>
         </div>
-
-        <div
-          style={{
-            minWidth: 42,
-            padding: '7px 10px',
-            background: '#f0fdfa',
-            color: '#14868C',
-            fontFamily: 'Poppins',
-            fontWeight: 700,
-            fontSize: 12,
-            textAlign: 'center',
-          }}
-        >
-          {grandTotal}
-        </div>
-      </div>
-
-      {categories.map((c) => (
-        <BiradsBarRow
-          key={c.category}
-          category={c.category}
-          total={c.total}
-          maxTotal={maxTotal}
-          panelTitle={title}
-          perInstitute={c.perInstitute}
-        />
       ))}
     </div>
   );
 };
 
-const BiradsCategorySection = ({ biradsByInstituteAndSide }) => {
-  const institutes = biradsByInstituteAndSide || [];
+const BiradsStatsChart = ({ title, data = [], categoryKey, yMax }) => {
+  const chartData = data || [];
 
-  if (institutes.length === 0) {
-    return <p style={{ textAlign: 'center', color: '#6b7280' }}>No BIRADS data available.</p>;
+  const tickStep = 50;
+  const yTicks = [];
+  for (let t = 0; t <= yMax; t += tickStep) {
+    yTicks.push(t);
   }
 
-  const leftCategories = ensureAllBiradsCategories(
-    aggregateCategoryCounts(institutes, 'left')
-  );
-
-  const rightCategories = ensureAllBiradsCategories(
-    aggregateCategoryCounts(institutes, 'right')
-  );
-  const maxTotal = Math.max(
-    0,
-    ...leftCategories.map((c) => c.total),
-    ...rightCategories.map((c) => c.total)
-  );
+  const barSize = window.innerWidth < 768 ? 18 : 32;
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-        gap: 20,
-        padding: '8px 0 20px',
-        width: '100%',
-        overflow: 'visible',
-      }}
-    >
-      <BiradsBarPanel title="Left BI-RADS" categories={leftCategories} maxTotal={maxTotal} />
-      <BiradsBarPanel title="Right BI-RADS" categories={rightCategories} maxTotal={maxTotal} />
+    <div className="chart-card" style={{ padding: '0px 0px 10px' }}>
+      <h3 style={{paddingTop:20, color: '#14868C' }}>{title}</h3>
+
+      <div
+        className="chart-wrapper"
+        style={{ height: 400 }}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={chartData}
+            // margin={{ top: 20, right: 20, left: 0, bottom: 0 }}
+            barCategoryGap="q0%"
+            barGap={2}
+          >
+            <CartesianGrid
+              yAxisId="left"
+              strokeDasharray="4 4"
+              vertical={false}
+              stroke="#059669"
+              strokeOpacity={0.1}
+            />
+
+            <XAxis
+              dataKey={categoryKey}
+              interval={0}
+              angle={window.innerWidth < 600 ? -35 : 0}
+              textAnchor={window.innerWidth < 600 ? "end" : "middle"}
+              height={window.innerWidth < 600 ? 55 : 30}
+              axisLine={{ stroke: '#cbd5e1', strokeOpacity: 0.8 }}
+              tickLine={false}
+              tick={{
+                fontFamily: "Poppins",
+                fontSize: window.innerWidth < 768 ? 10 : 15,
+                fontWeight: 400,
+                fill: "#94a3b8",
+              }}
+            />
+
+            <YAxis
+              yAxisId="left"
+              domain={[0, yMax]}
+              ticks={yTicks}
+              allowDecimals={false}
+              axisLine={{ stroke: '#cbd5e1', strokeOpacity: 0.8 }}
+              tickLine={false}
+              tick={{
+                fontFamily: 'Poppins',
+                fontSize: 11,
+                fontWeight: 400,
+                fill: '#94a3b8',
+              }}
+              label={{
+                value: 'No. of Patients',
+                angle: -90,
+                position: 'insideLeft',
+                offset: 12,
+                style: {
+                  textAnchor: 'middle',
+                  fontFamily: 'Poppins',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  fill: '#14868C',
+                },
+              }}
+            />
+
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              domain={[0, yMax]}
+              ticks={yTicks}
+              allowDecimals={false}
+              axisLine={false}
+              tickLine={false}
+              tick={false}
+              width={16}
+            />
+
+            <Tooltip content={<BiradsTooltip categoryKey={categoryKey} />} />
+
+            <Legend
+              verticalAlign="bottom"
+              content={<BiradsLegend />}
+              wrapperStyle={{
+                paddingTop: 0,
+                marginTop: -4,
+              }}
+            />
+
+            <Bar
+              yAxisId="left"
+              dataKey="patients"
+              name="Patients"
+              fill="#6ee7b7"
+              radius={[2, 2, 0, 0]}
+              barSize={barSize}
+            >
+              <LabelList
+                position="top"
+                style={{ fontSize: window.innerWidth < 768 ? 9 : 11, fontWeight: 600, fill: "#059669", fontFamily: "Poppins" }}
+              />
+            </Bar>
+
+            <Bar
+              yAxisId="right"
+              dataKey="images"
+              name="Images"
+              fill="#fb923c"
+              radius={[2, 2, 0, 0]}
+              barSize={barSize}
+            >
+              <LabelList
+                dataKey="images"
+                position="top"
+                style={{
+                  fontSize: window.innerWidth < 768 ? 9 : 11,
+                  fontWeight: 600,
+                  fill: "#c2620d",
+                  fontFamily: "Poppins",
+                }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 };
@@ -828,7 +725,7 @@ const MammogramStats = () => {
 
   return (
     <div style={{ marginTop: 20 }}>
-      <h2 style={{ textAlign: 'center', color: '#34495e', marginBottom: 20 }}>Assessment Records</h2>
+      <h2 style={{ textAlign: 'center', color: '#14868C', marginBottom: 20 }}>Assessment Records</h2>
 
       <div className="summary-section" style={{ marginBottom: '2rem' }}>
         <div className="summary-card">
@@ -848,7 +745,7 @@ const MammogramStats = () => {
 
       <div className="charts-grid">
         <div className="chart-card full-width">
-          <h3>Machine Modality (CR / DR)</h3>
+          <h3 style={{ color: '#14868C' }}>Machine Modality (CR / DR)</h3>
           <div className="chart-wrapper pie-wrapper">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -873,17 +770,41 @@ const MammogramStats = () => {
             </ResponsiveContainer>
           </div>
         </div>
+        <div className="chart-card full-width">
+          <div
+            className="birads-charts-grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '3fr 2fr',
+              gap: '12px',
+              width: '100%',
+              boxSizing: 'border-box',
+            }}
+          >
+            {/* 60% */}
+            <div style={{ width: '100%', minWidth: 0 }}>
+              <BiradsStatsChart
+                title="BIRADS Category"
+                data={data.biradsCategory}
+                categoryKey="category"
+                yMax={300}
+              />
+            </div>
 
-        <div className="chart-card full-width" style={{ padding: '28px 24px 32px' }}>
-          <h3 style={{ marginBottom: 6, color: '#14868C', fontWeight: 800, fontSize: '1.4rem' }}>
-            BIRADS — Left vs Right
-          </h3>
-          <BiradsCategorySection biradsByInstituteAndSide={data.biradsByInstituteAndSide} />
+            {/* 40% */}
+            <div style={{ width: '100%', minWidth: 0 }}>
+              <BiradsStatsChart
+                title="Breast Density"
+                data={data.biradsDensity}
+                categoryKey="density"
+                yMax={200}
+              />
+            </div>
+          </div>
         </div>
-
         <div className="chart-card full-width">
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <h3 style={{ margin: 0 }}>Mammogram Uploads by Institution</h3>
+            <h3 style={{ margin: 0, color: '#14868C' }}>Mammogram Uploads by Institution</h3>
             <div style={{ display: 'flex', gap: 16, fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: '#6ee7b7', display: 'inline-block' }} />
@@ -948,7 +869,7 @@ const MammogramStats = () => {
                   />
                   <Legend
                     verticalAlign="bottom"
-                    height={36}
+                    height={10}
                     iconType="circle"
                     wrapperStyle={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 500, color: '#374151' }}
                   />
@@ -985,13 +906,12 @@ const MammogramStats = () => {
             </div>
           </div>
         </div>
-
-        {/* <div className="chart-card full-width">
-          <h3 style={{ marginBottom:12, color: '#14868C', fontWeight: 800,fontSize: '1.4rem' }}>
+        <div className="chart-card full-width">
+          <h3 style={{ marginBottom: 12, color: '#14868C', fontWeight: 800, fontSize: '1.4rem' }}>
             Machines by Institute
           </h3>
           <InstituteOrbitCloud byHospital={data.byHospital} />
-        </div> */}
+        </div>
       </div>
     </div>
   );
