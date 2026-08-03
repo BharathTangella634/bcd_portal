@@ -69,6 +69,7 @@ def send_template_email(
     variables: dict,
     reply_to: str = None,
     from_email: str = None,
+    cc: List[str] = None,
     include_configured_cc: bool = True,
     raise_on_error: bool = False,
 ) -> bool:
@@ -82,9 +83,20 @@ def send_template_email(
         return False
 
     cc_list = []
+    seen_cc = set()
+    to_email_normalized = to_email.strip().lower()
+    for address in cc or []:
+        normalized = address.strip().lower()
+        if normalized and normalized != to_email_normalized and normalized not in seen_cc:
+            seen_cc.add(normalized)
+            cc_list.append(normalized)
     if include_configured_cc:
         cc_rows = db.query(EmailTemplateCc).filter(EmailTemplateCc.template_key == template_key).all()
-        cc_list = [row.cc_email for row in cc_rows if row.cc_email != to_email]
+        for row in cc_rows:
+            normalized = row.cc_email.strip().lower()
+            if normalized and normalized != to_email_normalized and normalized not in seen_cc:
+                seen_cc.add(normalized)
+                cc_list.append(normalized)
 
     variables.setdefault("login_url", LOGIN_URL)
 

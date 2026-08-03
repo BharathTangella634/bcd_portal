@@ -109,6 +109,8 @@ class ReminderEmailLog(Base):
     status = Column(String(20), nullable=False, default="pending")
     attempt_count = Column(Integer, nullable=False, default=0)
     error_message = Column(Text)
+    failure_notified_at = Column(DateTime)
+    failure_notification_error = Column(Text)
     sent_at = Column(DateTime)
     created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
 

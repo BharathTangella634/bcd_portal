@@ -15,6 +15,7 @@ from ..services.reminder_reports import (
     is_delivery_disabled,
     is_delivery_paused,
     run_reminders,
+    reminder_cc_recipients,
     set_delivery_disabled,
     set_delivery_paused,
 )
@@ -65,6 +66,8 @@ def _report_preview(report) -> dict:
             "routineViewQualityFlags": report.mammogram_quality_flags,
         },
         "activeRecipientCount": report.active_recipient_count,
+        "activeRecipientEmails": list(report.active_recipient_emails),
+        "goalAchieved": report.pending_submissions == 0,
     }
 
 
@@ -81,6 +84,9 @@ def reminder_status(
         "pilotIntervalMinutes": settings.REMINDER_INTERVAL_MINUTES,
         "quarterlyTarget": settings.REMINDER_QUARTERLY_TARGET,
         "aggregateRecipients": [recipient.email for recipient in aggregate_recipients()],
+        "ccRecipients": reminder_cc_recipients(),
+        "maxDeliveryAttempts": max(settings.REMINDER_MAX_DELIVERY_ATTEMPTS, 1),
+        "failureRecipientEmail": settings.REMINDER_FAILURE_RECIPIENT_EMAIL,
     }
 
 

@@ -15,10 +15,15 @@ from backend.src.services.reminder_reports import (
     ReminderRecipient,
     aggregate_recipients,
     build_report,
+    build_reports,
     hospital_recipients,
     is_due,
     quarter_bounds,
+    reminder_cc_recipients,
+    report_variables,
+    run_reminders,
     send_report,
+    send_template_test_suite,
 )
 from backend.tests.conftest import TestQSession, TestSession
 
@@ -183,6 +188,10 @@ def test_build_report_requires_all_five_data_point_components():
         assert report.missing_density == 1
         assert report.missing_mammogram_reports == 1
         assert report.mammogram_quality_flags == 1
+        assert report.active_recipient_count == 3
+        assert set(report.active_recipient_emails) == {
+            "admin@test.com", "doctor@test.com", "staff@test.com"
+        }
     finally:
         cleanup_sessions(db, q_db, session_ids)
         q_db.close()
@@ -208,8 +217,48 @@ def test_pending_never_goes_below_zero():
         report = build_report(db, q_db, hospital, date(2026, 8, 10), target=2)
         assert report.data_points == 3
         assert report.pending_submissions == 0
+        variables = report_variables(
+            report,
+            ReminderRecipient("doctor@test.com", "Doctor"),
+        )
+        assert variables["progress_percent"] == 100
+        assert variables["goal_status_message"].startswith(
+            "Minimum quarterly target achieved."
+        )
     finally:
         cleanup_sessions(db, q_db, session_ids)
+        q_db.close()
+        db.close()
+
+
+def test_report_uses_assessment_when_patient_session_parent_is_missing():
+    db = TestSession()
+    q_db = TestQSession()
+    hospital = db.query(Hospital).filter(Hospital.id == "clinic_00001").one()
+    doctor = db.query(User).filter(User.email == "doctor@test.com").one()
+    session_id = "orphan-assessment"
+    try:
+        add_questionnaire_session(
+            q_db,
+            session_id,
+            hospital.name,
+            datetime(2026, 8, 12),
+            consent_url="gs://test/orphan-consent.pdf",
+        )
+        add_assessment(db, doctor, hospital, session_id, complete=True)
+        db.commit()
+
+        report = build_report(db, q_db, hospital, date(2026, 8, 20), target=200)
+
+        assert report.current_quarter_records == 1
+        assert report.assessments_submitted == 1
+        assert report.data_points == 1
+        assert report.pending_submissions == 199
+        assert report.missing_mammogram_views == 0
+        assert report.missing_birads == 0
+        assert report.missing_density == 0
+    finally:
+        cleanup_sessions(db, q_db, [session_id])
         q_db.close()
         db.close()
 
@@ -217,13 +266,93 @@ def test_pending_never_goes_below_zero():
 def test_hospital_reports_go_to_every_active_account(monkeypatch):
     db = TestSession()
     monkeypatch.setattr(reminder_reports.settings, "REMINDER_RECIPIENT_EMAIL", "")
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_EXCLUDED_RECIPIENT_DOMAINS",
+        "tanuh.ai",
+    )
+    internal_email = "internal.reviewer@TANUH.AI"
     try:
+        existing_user = db.query(User).filter(User.email == "admin@test.com").one()
+        db.add(User(
+            email=internal_email,
+            password_hash="not-used",
+            hospital_id="clinic_00001",
+            role_id=existing_user.role_id,
+            is_active=True,
+            full_name="Internal Reviewer",
+        ))
+        db.commit()
         recipients = hospital_recipients(db, "clinic_00001")
         assert {recipient.email for recipient in recipients} == {
             "admin@test.com", "doctor@test.com", "staff@test.com"
         }
     finally:
+        db.query(User).filter(User.email == internal_email).delete(
+            synchronize_session=False
+        )
+        db.commit()
         db.close()
+
+
+def test_new_hospitals_are_automatically_included_in_reports():
+    db = TestSession()
+    q_db = TestQSession()
+    hospital_id = "clinic_00999"
+    try:
+        db.add(Hospital(
+            id=hospital_id,
+            name="Newly Added Hospital",
+            contact_person="New Contact",
+            email="new-hospital@example.com",
+        ))
+        db.commit()
+
+        reports = build_reports(db, q_db, date(2026, 8, 20))
+        report_ids = {report.hospital_id for report in reports}
+
+        assert hospital_id in report_ids
+        assert "clinic_00001" in report_ids
+        assert "clinic_00002" not in report_ids
+    finally:
+        db.query(Hospital).filter(Hospital.id == hospital_id).delete(
+            synchronize_session=False
+        )
+        db.commit()
+        q_db.close()
+        db.close()
+
+
+def test_aggregate_report_uses_approved_internal_distribution(monkeypatch):
+    monkeypatch.setattr(reminder_reports.settings, "REMINDER_RECIPIENT_EMAIL", "")
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_AGGREGATE_RECIPIENTS",
+        (
+            "ashwin.rajkumar@tanuh.ai,vaishnavi.joshi@tanuh.ai,"
+            "palivela.sanjana@tanuh.ai,manisha.verma@tanuh.ai,"
+            "bharath.tangella@tanuh.ai,phaneendra.yalavarthy@tanuh.ai"
+        ),
+    )
+
+    assert [recipient.email for recipient in aggregate_recipients()] == [
+        "ashwin.rajkumar@tanuh.ai",
+        "vaishnavi.joshi@tanuh.ai",
+        "palivela.sanjana@tanuh.ai",
+        "manisha.verma@tanuh.ai",
+        "bharath.tangella@tanuh.ai",
+        "phaneendra.yalavarthy@tanuh.ai",
+    ]
+
+
+def test_reminder_cc_uses_approved_distribution_and_deduplicates(monkeypatch):
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_CC_EMAILS",
+        "bcs@tanuh.ai,BCS@TANUH.AI",
+    )
+
+    assert reminder_cc_recipients() == ["bcs@tanuh.ai"]
 
 
 def test_pilot_override_replaces_hospital_and_aggregate_recipients(monkeypatch):
@@ -329,6 +458,11 @@ def test_send_report_records_success_and_prevents_duplicate(monkeypatch):
     report_date = date(2026, 9, 1)
     recipient = ReminderRecipient("doctor@test.com", "Doctor")
     calls = []
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_CC_EMAILS",
+        "bcs@tanuh.ai",
+    )
 
     def fake_send(*args, **kwargs):
         calls.append((args, kwargs))
@@ -350,7 +484,8 @@ def test_send_report_records_success_and_prevents_duplicate(monkeypatch):
         assert len(calls) == 1
         assert calls[0][0][3]["pending_submissions"] == 200
         assert calls[0][1]["include_configured_cc"] is False
-        assert calls[0][1]["from_email"] == "PinkShield AI <breastcancerscreening@tanuh.ai>"
+        assert calls[0][1]["from_email"] == "PinkShieldAI <breastcancerscreening@tanuh.ai>"
+        assert calls[0][1]["cc"] == ["bcs@tanuh.ai"]
     finally:
         db.query(ReminderEmailLog).filter(
             ReminderEmailLog.report_date == report_date,
@@ -396,5 +531,202 @@ def test_new_five_minute_period_can_send_another_pilot_email(monkeypatch):
             ReminderEmailLog.recipient_email == recipient.email,
         ).delete(synchronize_session=False)
         db.commit()
+        db.close()
+        q_db.close()
+
+
+def test_failure_notification_is_sent_after_initial_attempt_and_two_retries(monkeypatch):
+    db = TestSession()
+    q_db = TestQSession()
+    hospital = db.query(Hospital).filter(Hospital.id == "clinic_00001").one()
+    recipient = ReminderRecipient("doctor@test.com", "Doctor")
+    report_date = date(2026, 9, 3)
+    calls = []
+
+    def fake_send(*args, **kwargs):
+        template_key = args[1]
+        calls.append((template_key, args[2], args[3], kwargs))
+        if template_key == reminder_reports.FAILURE_TEMPLATE_KEY:
+            return True
+        raise RuntimeError("test SMTP delivery failure")
+
+    monkeypatch.setattr(reminder_reports, "send_template_email", fake_send)
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_FAILURE_RECIPIENT_EMAIL",
+        "vaishnavi.joshi@tanuh.ai",
+    )
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_MAX_DELIVERY_ATTEMPTS",
+        3,
+    )
+    try:
+        db.query(ReminderEmailLog).filter(
+            ReminderEmailLog.report_date == report_date,
+            ReminderEmailLog.recipient_email == recipient.email,
+        ).delete(synchronize_session=False)
+        db.commit()
+        report = build_report(db, q_db, hospital, report_date, target=200)
+
+        send_report(db, report, recipient)
+        send_report(db, report, recipient)
+        exhausted = send_report(db, report, recipient)
+        repeated = send_report(db, report, recipient)
+
+        assert exhausted.id == repeated.id
+        assert exhausted.status == "failed"
+        assert exhausted.attempt_count == 3
+        assert exhausted.failure_notified_at is not None
+        assert exhausted.failure_notification_error is None
+        assert [call[0] for call in calls].count(
+            reminder_reports.HOSPITAL_TEMPLATE_KEY
+        ) == 3
+        failure_calls = [
+            call for call in calls
+            if call[0] == reminder_reports.FAILURE_TEMPLATE_KEY
+        ]
+        assert len(failure_calls) == 1
+        assert failure_calls[0][1] == "vaishnavi.joshi@tanuh.ai"
+        assert failure_calls[0][2]["attempt_count"] == 3
+        assert "cc" not in failure_calls[0][3]
+    finally:
+        db.query(ReminderEmailLog).filter(
+            ReminderEmailLog.report_date == report_date,
+            ReminderEmailLog.recipient_email == recipient.email,
+        ).delete(synchronize_session=False)
+        db.commit()
+        db.close()
+        q_db.close()
+
+
+def test_aggregate_only_sends_one_summary_to_pilot_override(monkeypatch):
+    db = TestSession()
+    q_db = TestQSession()
+    report_date = date(2026, 9, 4)
+    calls = []
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_CC_EMAILS",
+        "bcs@tanuh.ai",
+    )
+
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_RECIPIENT_EMAIL",
+        "manisha.verma@tanuh.ai",
+    )
+    monkeypatch.setattr(
+        reminder_reports,
+        "send_template_email",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    )
+    try:
+        db.query(ReminderEmailLog).filter(
+            ReminderEmailLog.report_date == report_date,
+            ReminderEmailLog.recipient_email == "manisha.verma@tanuh.ai",
+        ).delete(synchronize_session=False)
+        db.commit()
+
+        results = run_reminders(
+            db,
+            q_db,
+            report_date=report_date,
+            aggregate_only=True,
+        )
+
+        assert len(results) == 1
+        assert results[0].report_type == "aggregate"
+        assert results[0].hospital_id is None
+        assert results[0].recipient_email == "manisha.verma@tanuh.ai"
+        assert results[0].status == "sent"
+        assert len(calls) == 1
+        assert calls[0][0][1] == reminder_reports.AGGREGATE_TEMPLATE_KEY
+        assert calls[0][1]["cc"] == ["bcs@tanuh.ai"]
+    finally:
+        db.query(ReminderEmailLog).filter(
+            ReminderEmailLog.report_date == report_date,
+            ReminderEmailLog.recipient_email == "manisha.verma@tanuh.ai",
+        ).delete(synchronize_session=False)
+        db.commit()
+        db.close()
+        q_db.close()
+
+
+def test_template_test_suite_sends_all_formats_without_delivery_logs(monkeypatch):
+    db = TestSession()
+    q_db = TestQSession()
+    calls = []
+
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_RECIPIENT_EMAIL",
+        "manisha.verma@tanuh.ai",
+    )
+    monkeypatch.setattr(
+        reminder_reports,
+        "send_template_email",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    )
+    try:
+        initial_log_count = db.query(ReminderEmailLog).count()
+        results = send_template_test_suite(
+            db,
+            q_db,
+            hospital_id="clinic_00001",
+        )
+
+        assert [result["format"] for result in results] == [
+            "hospital_target_pending",
+            "hospital_target_achieved",
+            "all_hospitals_summary",
+            "delivery_failure_alert",
+        ]
+        assert all(result["status"] == "sent" for result in results)
+        assert all(
+            result["recipient"] == "manisha.verma@tanuh.ai"
+            for result in results
+        )
+        assert len(calls) == 4
+        assert [call[0][1] for call in calls] == [
+            reminder_reports.HOSPITAL_TEMPLATE_KEY,
+            reminder_reports.HOSPITAL_TEMPLATE_KEY,
+            reminder_reports.AGGREGATE_TEMPLATE_KEY,
+            reminder_reports.FAILURE_TEMPLATE_KEY,
+        ]
+        assert all("cc" not in call[1] for call in calls)
+        assert db.query(ReminderEmailLog).count() == initial_log_count
+    finally:
+        db.close()
+        q_db.close()
+
+
+def test_template_test_suite_dry_run_does_not_call_smtp(monkeypatch):
+    db = TestSession()
+    q_db = TestQSession()
+    calls = []
+
+    monkeypatch.setattr(
+        reminder_reports.settings,
+        "REMINDER_RECIPIENT_EMAIL",
+        "manisha.verma@tanuh.ai",
+    )
+    monkeypatch.setattr(
+        reminder_reports,
+        "send_template_email",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    )
+    try:
+        results = send_template_test_suite(
+            db,
+            q_db,
+            hospital_id="clinic_00001",
+            dry_run=True,
+        )
+
+        assert len(results) == 4
+        assert all(result["status"] == "dry_run" for result in results)
+        assert calls == []
+    finally:
         db.close()
         q_db.close()

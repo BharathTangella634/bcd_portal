@@ -51,7 +51,7 @@ class Settings:
     REMINDER_RECIPIENT_EMAIL: str = _cfg("REMINDER_RECIPIENT_EMAIL", "")
     REMINDER_FROM_EMAIL: str = _cfg(
         "REMINDER_FROM_EMAIL",
-        "PinkShield AI <breastcancerscreening@tanuh.ai>",
+        "PinkShieldAI <breastcancerscreening@tanuh.ai>",
     )
     REMINDER_QUARTERLY_TARGET: int = int(_cfg("REMINDER_QUARTERLY_TARGET", "200"))
     REMINDER_INTERVAL_DAYS: int = int(_cfg("REMINDER_INTERVAL_DAYS", "14"))
@@ -60,17 +60,25 @@ class Settings:
     REMINDER_SUPPORT_EMAIL: str = _cfg("REMINDER_SUPPORT_EMAIL", "")
     REMINDER_REPLY_TO: str = _cfg("REMINDER_REPLY_TO", "")
     REMINDER_TIMEZONE: str = _cfg("REMINDER_TIMEZONE", "Asia/Kolkata")
-    REMINDER_PILOT_HOSPITALS: str = _cfg(
-        "REMINDER_PILOT_HOSPITALS",
-        "Shanmuga,Sudarshana Scans",
-    )
     REMINDER_EXCLUDED_HOSPITALS: str = _cfg(
         "REMINDER_EXCLUDED_HOSPITALS",
         "Test,Tanuh Foundation",
     )
+    REMINDER_EXCLUDED_RECIPIENT_DOMAINS: str = _cfg(
+        "REMINDER_EXCLUDED_RECIPIENT_DOMAINS",
+        "tanuh.ai",
+    )
+    REMINDER_CC_EMAILS: str = _cfg(
+        "REMINDER_CC_EMAILS",
+        "bcs@tanuh.ai",
+    )
     REMINDER_AGGREGATE_RECIPIENTS: str = _cfg(
         "REMINDER_AGGREGATE_RECIPIENTS",
-        "ashwin.rajkumar@tanuh.ai,vaishnavi.joshi@tanuh.ai",
+        (
+            "ashwin.rajkumar@tanuh.ai,vaishnavi.joshi@tanuh.ai,"
+            "palivela.sanjana@tanuh.ai,manisha.verma@tanuh.ai,"
+            "bharath.tangella@tanuh.ai,phaneendra.yalavarthy@tanuh.ai"
+        ),
     )
     REMINDER_OPERATOR_EMAILS: str = _cfg(
         "REMINDER_OPERATOR_EMAILS",
@@ -80,6 +88,16 @@ class Settings:
         ),
     )
     REMINDER_LOG_RETENTION_DAYS: int = int(_cfg("REMINDER_LOG_RETENTION_DAYS", "365"))
+    REMINDER_MAX_DELIVERY_ATTEMPTS: int = int(
+        _cfg("REMINDER_MAX_DELIVERY_ATTEMPTS", "3")
+    )
+    REMINDER_FAILURE_RECIPIENT_EMAIL: str = _cfg(
+        "REMINDER_FAILURE_RECIPIENT_EMAIL",
+        "vaishnavi.joshi@tanuh.ai",
+    )
+    REMINDER_TEMPLATE_TEST_ENABLED: bool = (
+        _cfg("REMINDER_TEMPLATE_TEST_ENABLED", "false").lower() == "true"
+    )
 
     CRON_OIDC_AUDIENCE: str = _cfg("CRON_OIDC_AUDIENCE")
     CRON_SERVICE_ACCOUNT_EMAIL: str = _cfg("CRON_SERVICE_ACCOUNT_EMAIL")

@@ -1,7 +1,7 @@
 import html
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from typing import Iterable, List, Optional
 from zoneinfo import ZoneInfo
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 HOSPITAL_TEMPLATE_KEY = "fortnightly_submission_update"
 AGGREGATE_TEMPLATE_KEY = "fortnightly_all_hospitals_update"
+FAILURE_TEMPLATE_KEY = "fortnightly_delivery_failure"
 INSTITUTE_QUESTIONS = (
     "Institute Name",
     "Institute Name:",
@@ -67,6 +68,7 @@ class ReminderReport:
     missing_mammogram_reports: int
     mammogram_quality_flags: int
     active_recipient_count: int
+    active_recipient_emails: tuple[str, ...]
 
 
 def _csv_values(value: str) -> list[str]:
@@ -145,20 +147,35 @@ def _blank_questionnaire_session_ids(questionnaire_db: Session, session_ids: lis
 def _patient_sessions(db: Session, session_ids: list[str]) -> dict[str, PatientSession]:
     sessions: dict[str, PatientSession] = {}
     for session_chunk in _chunks(session_ids):
-        rows = db.query(PatientSession).options(
-            joinedload(PatientSession.assessments).joinedload(DoctorAssessment.attachments)
-        ).filter(PatientSession.id.in_(session_chunk)).all()
+        rows = db.query(PatientSession).filter(
+            PatientSession.id.in_(session_chunk)
+        ).all()
         sessions.update({row.id: row for row in rows})
     return sessions
 
 
-def _latest_assessment(patient_session: Optional[PatientSession]) -> Optional[DoctorAssessment]:
-    if not patient_session or not patient_session.assessments:
-        return None
-    return max(
-        patient_session.assessments,
-        key=lambda item: (item.created_at or datetime.min, item.id or 0),
-    )
+def _latest_assessments(
+    db: Session,
+    session_ids: list[str],
+) -> dict[str, DoctorAssessment]:
+    assessments: dict[str, DoctorAssessment] = {}
+    for session_chunk in _chunks(session_ids):
+        rows = db.query(DoctorAssessment).options(
+            joinedload(DoctorAssessment.attachments)
+        ).filter(
+            DoctorAssessment.patient_session_id.in_(session_chunk)
+        ).all()
+        for row in rows:
+            existing = assessments.get(row.patient_session_id)
+            if not existing or (
+                row.created_at or datetime.min,
+                row.id or 0,
+            ) > (
+                existing.created_at or datetime.min,
+                existing.id or 0,
+            ):
+                assessments[row.patient_session_id] = row
+    return assessments
 
 
 def _bilateral_value(assessment: Optional[DoctorAssessment], field: str) -> bool:
@@ -177,8 +194,11 @@ def _bilateral_value(assessment: Optional[DoctorAssessment], field: str) -> bool
     return bool(right_value or right.get(field)) and bool(left_value or left.get(field))
 
 
-def _components(questionnaire_row, patient_session: Optional[PatientSession]) -> dict[str, bool]:
-    assessment = _latest_assessment(patient_session)
+def _components(
+    questionnaire_row,
+    patient_session: Optional[PatientSession],
+    assessment: Optional[DoctorAssessment],
+) -> dict[str, bool]:
     attachment_types = {
         attachment.file_type for attachment in (assessment.attachments if assessment else [])
     }
@@ -205,25 +225,34 @@ def _is_complete_data_point(components: dict[str, bool]) -> bool:
     return all(components[key] for key in ("consent", "questionnaire", "mammogram", "birads", "density"))
 
 
-def hospital_recipients(db: Session, hospital_id: str) -> list[ReminderRecipient]:
-    if settings.REMINDER_RECIPIENT_EMAIL:
-        return [ReminderRecipient(settings.REMINDER_RECIPIENT_EMAIL.strip().lower(), "Pilot Reviewer")]
-
+def active_hospital_recipients(db: Session, hospital_id: str) -> list[ReminderRecipient]:
     users = db.query(User).filter(
         User.hospital_id == hospital_id,
         User.is_active.is_(True),
         User.email.isnot(None),
         User.email != "",
     ).order_by(User.id).all()
+    excluded_domains = {
+        value.lower().lstrip("@")
+        for value in _csv_values(settings.REMINDER_EXCLUDED_RECIPIENT_DOMAINS)
+    }
     recipients: list[ReminderRecipient] = []
     seen: set[str] = set()
     for user in users:
         email = user.email.strip().lower()
+        if any(email.endswith(f"@{domain}") for domain in excluded_domains):
+            continue
         if email in seen:
             continue
         seen.add(email)
         recipients.append(ReminderRecipient(email, user.full_name or "PinkShield AI User"))
     return recipients
+
+
+def hospital_recipients(db: Session, hospital_id: str) -> list[ReminderRecipient]:
+    if settings.REMINDER_RECIPIENT_EMAIL:
+        return [ReminderRecipient(settings.REMINDER_RECIPIENT_EMAIL.strip().lower(), "Pilot Reviewer")]
+    return active_hospital_recipients(db, hospital_id)
 
 
 def aggregate_recipients() -> list[ReminderRecipient]:
@@ -242,6 +271,17 @@ def aggregate_recipients() -> list[ReminderRecipient]:
     return recipients
 
 
+def reminder_cc_recipients() -> list[str]:
+    seen: set[str] = set()
+    recipients: list[str] = []
+    for value in _csv_values(settings.REMINDER_CC_EMAILS):
+        email = value.strip().lower()
+        if email and email not in seen:
+            seen.add(email)
+            recipients.append(email)
+    return recipients
+
+
 def build_report(
     db: Session,
     questionnaire_db: Session,
@@ -254,11 +294,16 @@ def build_report(
     questionnaire_rows = _questionnaire_rows(questionnaire_db, hospital.name)
     session_ids = [row.session_id for row in questionnaire_rows]
     patient_sessions = _patient_sessions(db, session_ids)
+    latest_assessments = _latest_assessments(db, session_ids)
 
     current_rows = []
     lifetime_data_points = 0
     for row in questionnaire_rows:
-        components = _components(row, patient_sessions.get(row.session_id))
+        components = _components(
+            row,
+            patient_sessions.get(row.session_id),
+            latest_assessments.get(row.session_id),
+        )
         if _is_complete_data_point(components):
             lifetime_data_points += 1
         submitted_on = _as_date(row.session_end_time or row.session_start_time)
@@ -270,7 +315,7 @@ def build_report(
     data_points = sum(_is_complete_data_point(components) for _, components in current_rows)
     assessments_submitted = sum(components["assessment"] for _, components in current_rows)
 
-    recipients = hospital_recipients(db, hospital.id)
+    recipients = active_hospital_recipients(db, hospital.id)
     return ReminderReport(
         hospital_id=hospital.id,
         hospital_name=hospital.name,
@@ -299,6 +344,7 @@ def build_report(
             for _, components in current_rows
         ),
         active_recipient_count=len(recipients),
+        active_recipient_emails=tuple(recipient.email for recipient in recipients),
     )
 
 
@@ -339,6 +385,18 @@ def report_variables(report: ReminderReport, recipient: ReminderRecipient) -> di
         min(round((report.data_points / report.quarterly_target) * 100), 100)
         if report.quarterly_target else 100
     )
+    if report.pending_submissions == 0:
+        goal_status_message = (
+            "Minimum quarterly target achieved. Thank you for your contribution. "
+            "Please continue submitting additional complete records and resolving "
+            "any remaining data-quality issues."
+        )
+    else:
+        goal_status_message = (
+            f"{report.pending_submissions} complete patient data points remain against "
+            f"this quarter's minimum target. Please complete submissions by "
+            f"{(report.quarter_end - timedelta(days=1)).strftime('%d %B %Y')}."
+        )
     return {
         "contact_name": html.escape(recipient.name),
         "hospital_name": html.escape(report.hospital_name),
@@ -351,6 +409,7 @@ def report_variables(report: ReminderReport, recipient: ReminderRecipient) -> di
         "pending_submissions": report.pending_submissions,
         "quarterly_target": report.quarterly_target,
         "progress_percent": progress_percent,
+        "goal_status_message": goal_status_message,
         "current_quarter_records": report.current_quarter_records,
         "missing_consent": report.missing_consent,
         "missing_questionnaire_sessions": report.missing_questionnaire_sessions,
@@ -404,6 +463,133 @@ def aggregate_variables(reports: list[ReminderReport], report_date: date, recipi
         "portal_url": settings.REMINDER_PORTAL_URL,
         "quarter_end_date": (quarter_end - timedelta(days=1)).strftime("%d %B %Y"),
     }
+
+
+def send_template_test_suite(
+    db: Session,
+    questionnaire_db: Session,
+    hospital_id: str,
+    dry_run: bool = False,
+) -> list[dict]:
+    """Send controlled format samples without creating reminder delivery logs."""
+    recipient_email = settings.REMINDER_RECIPIENT_EMAIL.strip().lower()
+    recipient = ReminderRecipient(recipient_email, "Pilot Reviewer")
+    report_date = current_date()
+    hospital_reports = build_reports(
+        db,
+        questionnaire_db,
+        report_date,
+        hospital_id=hospital_id,
+    )
+    if not hospital_reports:
+        return []
+
+    report = hospital_reports[0]
+    pending_target = max(report.quarterly_target, report.data_points + 1)
+    pending_report = replace(
+        report,
+        quarterly_target=pending_target,
+        pending_submissions=pending_target - report.data_points,
+    )
+    achieved_points = max(report.data_points, report.quarterly_target)
+    achieved_report = replace(
+        report,
+        lifetime_data_points=max(report.lifetime_data_points, achieved_points),
+        data_points=achieved_points,
+        pending_submissions=0,
+    )
+    all_reports = build_reports(db, questionnaire_db, report_date)
+    aggregate_test_variables = aggregate_variables(
+        all_reports,
+        report_date,
+        recipient,
+    )
+    aggregate_test_variables["quarter"] = (
+        f"[TEST] {aggregate_test_variables['quarter']}"
+    )
+    formats = [
+        (
+            "hospital_target_pending",
+            HOSPITAL_TEMPLATE_KEY,
+            {
+                **report_variables(pending_report, recipient),
+                "hospital_name": (
+                    f"[TEST - Target Pending] "
+                    f"{html.escape(pending_report.hospital_name)}"
+                ),
+            },
+        ),
+        (
+            "hospital_target_achieved",
+            HOSPITAL_TEMPLATE_KEY,
+            {
+                **report_variables(achieved_report, recipient),
+                "hospital_name": (
+                    f"[TEST - Target Achieved] "
+                    f"{html.escape(achieved_report.hospital_name)}"
+                ),
+            },
+        ),
+        (
+            "all_hospitals_summary",
+            AGGREGATE_TEMPLATE_KEY,
+            aggregate_test_variables,
+        ),
+        (
+            "delivery_failure_alert",
+            FAILURE_TEMPLATE_KEY,
+            {
+                "report_type": "Hospital (format test)",
+                "hospital_name": f"[TEST] {html.escape(report.hospital_name)}",
+                "intended_recipient": "sample-recipient@hospital.example",
+                "report_date": report_date.strftime("%d %B %Y"),
+                "attempt_count": max(settings.REMINDER_MAX_DELIVERY_ATTEMPTS, 1),
+                "last_error": (
+                    "Template test only: sample delivery failure. "
+                    "No hospital email failed."
+                ),
+            },
+        ),
+    ]
+
+    results = []
+    for format_name, template_key, variables in formats:
+        if dry_run:
+            results.append({
+                "format": format_name,
+                "recipient": recipient.email,
+                "status": "dry_run",
+            })
+            continue
+        try:
+            send_template_email(
+                db,
+                template_key,
+                recipient.email,
+                variables,
+                reply_to=settings.REMINDER_REPLY_TO or None,
+                from_email=settings.REMINDER_FROM_EMAIL,
+                include_configured_cc=False,
+                raise_on_error=True,
+            )
+            results.append({
+                "format": format_name,
+                "recipient": recipient.email,
+                "status": "sent",
+            })
+        except Exception as exc:
+            logger.exception(
+                "Reminder format test failed (format=%s, recipient=%s)",
+                format_name,
+                recipient.email,
+            )
+            results.append({
+                "format": format_name,
+                "recipient": recipient.email,
+                "status": "failed",
+                "error": str(exc)[:500],
+            })
+    return results
 
 
 def _delivery_key(
@@ -473,6 +659,13 @@ def _delivery_log(
     ).first()
     if existing and existing.status == "sent":
         return existing, False
+    max_attempts = max(settings.REMINDER_MAX_DELIVERY_ATTEMPTS, 1)
+    if (
+        existing
+        and existing.status == "failed"
+        and (existing.attempt_count or 0) >= max_attempts
+    ):
+        return existing, False
     log = existing or ReminderEmailLog(
         report_type=report_type,
         hospital_id=hospital_id,
@@ -495,6 +688,51 @@ def _delivery_log(
     return log, True
 
 
+def _notify_exhausted_delivery(
+    db: Session,
+    log: ReminderEmailLog,
+    variables: dict,
+) -> None:
+    if log.failure_notified_at or not settings.REMINDER_FAILURE_RECIPIENT_EMAIL.strip():
+        return
+    max_attempts = max(settings.REMINDER_MAX_DELIVERY_ATTEMPTS, 1)
+    if log.status != "failed" or (log.attempt_count or 0) < max_attempts:
+        return
+
+    recipient = settings.REMINDER_FAILURE_RECIPIENT_EMAIL.strip().lower()
+    hospital_name = variables.get("hospital_name") or "All hospitals"
+    try:
+        send_template_email(
+            db,
+            FAILURE_TEMPLATE_KEY,
+            recipient,
+            {
+                "report_type": html.escape(log.report_type.title()),
+                "hospital_name": hospital_name,
+                "intended_recipient": html.escape(log.recipient_email),
+                "report_date": log.report_date.strftime("%d %B %Y"),
+                "attempt_count": log.attempt_count,
+                "last_error": html.escape(log.error_message or "Unknown delivery error"),
+            },
+            reply_to=settings.REMINDER_REPLY_TO or None,
+            from_email=settings.REMINDER_FROM_EMAIL,
+            include_configured_cc=False,
+            raise_on_error=True,
+        )
+        log.failure_notified_at = datetime.now(
+            ZoneInfo(settings.REMINDER_TIMEZONE)
+        ).replace(tzinfo=None)
+        log.failure_notification_error = None
+    except Exception as exc:
+        log.failure_notification_error = str(exc)[:2000]
+        logger.exception(
+            "Failed to notify %s about exhausted reminder delivery %s",
+            recipient,
+            log.id,
+        )
+    db.commit()
+
+
 def _send_delivery(
     db: Session,
     log: ReminderEmailLog,
@@ -504,6 +742,7 @@ def _send_delivery(
     dry_run: bool,
 ) -> ReminderEmailLog:
     if not should_send:
+        _notify_exhausted_delivery(db, log, variables)
         return log
     if dry_run:
         log.status = "dry_run"
@@ -518,6 +757,7 @@ def _send_delivery(
             variables,
             reply_to=settings.REMINDER_REPLY_TO or None,
             from_email=settings.REMINDER_FROM_EMAIL,
+            cc=reminder_cc_recipients(),
             include_configured_cc=False,
             raise_on_error=True,
         )
@@ -534,6 +774,8 @@ def _send_delivery(
             log.recipient_email,
         )
     db.commit()
+    db.refresh(log)
+    _notify_exhausted_delivery(db, log, variables)
     db.refresh(log)
     return log
 
@@ -610,16 +852,6 @@ def _all_hospitals(db: Session) -> list[Hospital]:
     ]
 
 
-def _is_pilot_hospital(hospital: Hospital) -> bool:
-    pilot_values = {value.lower() for value in _csv_values(settings.REMINDER_PILOT_HOSPITALS)}
-    if not pilot_values:
-        return True
-    candidates = {hospital.id.lower(), hospital.name.lower()}
-    if hospital.short_name:
-        candidates.add(hospital.short_name.lower())
-    return bool(candidates & pilot_values)
-
-
 def build_reports(
     db: Session,
     questionnaire_db: Session,
@@ -685,6 +917,7 @@ def run_reminders(
     dry_run: bool = False,
     force: bool = False,
     include_aggregate: Optional[bool] = None,
+    aggregate_only: bool = False,
 ) -> List[ReminderEmailLog]:
     if report_date is None:
         now = datetime.now(ZoneInfo(settings.REMINDER_TIMEZONE)).replace(tzinfo=None)
@@ -692,7 +925,9 @@ def run_reminders(
         due_as_of = now
     else:
         due_as_of = datetime.combine(report_date, time.min)
-    if include_aggregate is None:
+    if aggregate_only:
+        include_aggregate = True
+    elif include_aggregate is None:
         include_aggregate = hospital_id is None
 
     cleanup_delivery_logs(db, due_as_of)
@@ -706,17 +941,14 @@ def run_reminders(
         report_date,
         hospital_id=hospital_id if hospital_id and not include_aggregate else None,
     )
-    hospitals_by_id = {
-        hospital.id: hospital for hospital in _all_hospitals(db)
-    }
-    delivery_reports = (
-        [report for report in all_reports if report.hospital_id == hospital_id]
-        if hospital_id
-        else [
-            report for report in all_reports
-            if _is_pilot_hospital(hospitals_by_id[report.hospital_id])
-        ]
-    )
+    if aggregate_only:
+        delivery_reports = []
+    else:
+        delivery_reports = (
+            [report for report in all_reports if report.hospital_id == hospital_id]
+            if hospital_id
+            else all_reports
+        )
 
     results: list[ReminderEmailLog] = []
     for report in delivery_reports:
