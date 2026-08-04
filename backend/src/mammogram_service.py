@@ -1,6 +1,5 @@
 import logging
 from collections import Counter, defaultdict
-
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, text
 from .models.models import Attachment, DoctorAssessment, Hospital, PatientSession, Machine
@@ -35,7 +34,6 @@ def _get_institute_filter():
         GROUP BY session_id
     ) sd_inst ON s.session_id = sd_inst.session_id
     """
-
 
 def get_view_type_counts(db: Session) -> dict:
     view_counts = {}
@@ -226,10 +224,6 @@ def get_mammogram_by_hospital(db: Session) -> list:
     return hospital_data
 
 def get_hospital_type_breakdown(db: Session) -> list:
-    """
-    Returns CR/DR counts for a pie chart. Each slice includes the list of
-    hospitals in that group, so the frontend can show hospital details on hover.
-    """
     rows = db.query(
         Hospital.id,
         Hospital.name,
@@ -290,44 +284,48 @@ def get_completion_rate(db: Session, questionnaire_db: Session) -> dict:
     }
 
 def get_birads_by_institute_and_side(db: Session) -> dict:
-    """
-    Returns BI-RADS category and breast density statistics.
-
-    Uses:
-      - mammo_birads
-      - mammo_density
-
-    Does NOT use:
-      - us_biopsy_birads
-      - us_biopsy_density
-    """
-
-    rows = db.query(
+    ranked = db.query(
+        DoctorAssessment.id.label('assessment_id'),
         DoctorAssessment.patient_session_id,
         DoctorAssessment.mammo_birads,
         DoctorAssessment.mammo_density,
-    ).filter(
-        DoctorAssessment.mammo_birads.isnot(None)
-    ).all()
+        func.row_number().over(
+            partition_by=DoctorAssessment.patient_session_id,
+            order_by=DoctorAssessment.created_at.desc()
+        ).label('rn')
+    ).subquery()
 
-    birads = defaultdict(lambda: {"patients": set(), "images": 0})
-    density = defaultdict(lambda: {"patients": set(), "images": 0})
+    image_count_subq = db.query(func.count(Attachment.id)).filter(
+        Attachment.assessment_id == ranked.c.assessment_id,
+        Attachment.file_type.in_(MAMMOGRAM_VIEW_TYPES)
+    ).correlate(ranked).scalar_subquery()
 
-    for patient_id, birads_value, density_value in rows:
+    rows = db.query(
+        ranked.c.patient_session_id,
+        ranked.c.mammo_birads,
+        ranked.c.mammo_density,
+        image_count_subq.label('image_count'),
+    ).filter(ranked.c.rn == 1).all()
+
+    birads = defaultdict(lambda: {"subjects": set(), "images": 0})
+    density = defaultdict(lambda: {"subjects": set(), "images": 0})
+
+    for patient_id, birads_value, density_value, image_count in rows:
+        image_count = image_count or 0
 
         if birads_value:
-            birads[str(birads_value)]["patients"].add(patient_id)
-            birads[str(birads_value)]["images"] += 1
+            birads[str(birads_value)]["subjects"].add(patient_id)
+            birads[str(birads_value)]["images"] += image_count
 
         if density_value:
-            density[str(density_value)]["patients"].add(patient_id)
-            density[str(density_value)]["images"] += 1
+            density[str(density_value)]["subjects"].add(patient_id)
+            density[str(density_value)]["images"] += image_count
 
     return {
         "biradsCategory": [
             {
                 "category": category,
-                "patients": len(data["patients"]),
+                "subjects": len(data["subjects"]),
                 "images": data["images"],
             }
             for category, data in sorted(birads.items())
@@ -335,12 +333,13 @@ def get_birads_by_institute_and_side(db: Session) -> dict:
         "biradsDensity": [
             {
                 "density": density_name,
-                "patients": len(data["patients"]),
+                "subjects": len(data["subjects"]),
                 "images": data["images"],
             }
             for density_name, data in sorted(density.items())
         ],
     }
+
 
 def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> dict:
     total_assessments = get_total_assessments_count(db)
@@ -349,7 +348,6 @@ def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> di
     no_mammogram = max(total_assessments - complete_sets - partial_sets, 0)
     report_uploaded = get_report_uploaded_count(db)
     report_missing = max(total_assessments - report_uploaded, 0)
-
     view_counts = get_view_type_counts(db)
     totals = get_total_mammogram_stats(db, questionnaire_db)
     by_hospital = get_mammogram_by_hospital(db)

@@ -134,6 +134,14 @@ const AdminContent = ({ hospitalName }) => {
   const [staffForm, setStaffForm] = useState({ fullName: '', email: '', password: '', hospitalId: '' });
   const [hospitalForm, setHospitalForm] = useState({ name: '', shortName: '', contactPerson: '', email: '', address: '', pincode: '', state: '', modalityType: '' });
   const [adminForm, setAdminForm] = useState({ fullName: '', email: '', password: '', hospitalId: '' });
+  const [machineForm, setMachineForm] = useState({
+    hospitalId: '',
+    hospitalShortName: '',
+    machineName: '',
+    machineMake: '',
+    machineTechnology: '',
+    noOfMachines: ''
+  });
 
   useEffect(() => {
     fetchHospitals();
@@ -317,6 +325,62 @@ const AdminContent = ({ hospitalName }) => {
     }
   };
 
+  const handleCreateMachine = async () => {
+    if (!machineForm.hospitalId || !machineForm.machineName || !machineForm.machineMake || !machineForm.machineTechnology || !machineForm.noOfMachines) {
+      alert('Error: Institute, Machine Name, Machine Make, Machine Technology and No. of Machines are required.');
+      return;
+    }
+    if (!/^[0-9]+$/.test(machineForm.noOfMachines) || Number(machineForm.noOfMachines) <= 0) {
+      alert('Error: No. of Machines must be a positive whole number.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/v1/admin/machines`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          hospital_id: machineForm.hospitalId,
+          hospital_short_name: machineForm.hospitalShortName,
+          machine: machineForm.machineName,
+          make: machineForm.machineMake,
+          technology: machineForm.machineTechnology,
+          no_of_machines: Number(machineForm.noOfMachines)
+        })
+      });
+
+      if (response.ok) {
+        alert('Machine details created successfully!');
+        setMachineForm({ hospitalId: '', hospitalShortName: '', machineName: '', machineMake: '', machineTechnology: '', noOfMachines: '' });
+      } else {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          const error = await response.json();
+          const detail = error.detail;
+          let message;
+          if (Array.isArray(detail)) {
+            message = detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+          } else {
+            message = detail || 'Failed to create machine details';
+          }
+          alert(`Error: ${message}`);
+        } else {
+          const errorText = await response.text();
+          console.error("Non-JSON error response:", errorText);
+          alert(`Error: Received non-JSON response from server. Status: ${response.status}`);
+        }
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleSection = (section) => {
     setExpandedSection(expandedSection === section ? null : section);
   };
@@ -391,7 +455,7 @@ const AdminContent = ({ hospitalName }) => {
               <input
                 style={inputStyle}
                 value={doctorForm.fullName}
-                onChange={(e) => setDoctorForm({...doctorForm, fullName: e.target.value})}
+                onChange={(e) => setDoctorForm({ ...doctorForm, fullName: e.target.value })}
               />
             </div>
             <div style={formGroupStyle}>
@@ -400,7 +464,7 @@ const AdminContent = ({ hospitalName }) => {
                 style={inputStyle}
                 type="email"
                 value={doctorForm.email}
-                onChange={(e) => setDoctorForm({...doctorForm, email: e.target.value})}
+                onChange={(e) => setDoctorForm({ ...doctorForm, email: e.target.value })}
               />
             </div>
             <div style={formGroupStyle}>
@@ -410,7 +474,7 @@ const AdminContent = ({ hospitalName }) => {
                   style={inputStyle}
                   type={showPasswords.doctor ? 'text' : 'password'}
                   value={doctorForm.password}
-                  onChange={(e) => setDoctorForm({...doctorForm, password: e.target.value})}
+                  onChange={(e) => setDoctorForm({ ...doctorForm, password: e.target.value })}
                 />
                 <span onClick={() => togglePasswordVisibility('doctor')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showPasswords.doctor ? '🙈' : '👁️'}</span>
               </div>
@@ -420,14 +484,14 @@ const AdminContent = ({ hospitalName }) => {
               <select
                 style={inputStyle}
                 value={doctorForm.hospitalId}
-                onChange={(e) => setDoctorForm({...doctorForm, hospitalId: e.target.value})}
+                onChange={(e) => setDoctorForm({ ...doctorForm, hospitalId: e.target.value })}
               >
                 <option value="">Select Institution</option>
                 {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </div>
             <button
-              style={{...buttonStyle, opacity: loading ? 0.7 : 1}}
+              style={{ ...buttonStyle, opacity: loading ? 0.7 : 1 }}
               disabled={loading}
               onClick={() => handleCreateUser(doctorForm, 'Clinician')}
             >
@@ -450,7 +514,7 @@ const AdminContent = ({ hospitalName }) => {
               <input
                 style={inputStyle}
                 value={staffForm.fullName}
-                onChange={(e) => setStaffForm({...staffForm, fullName: e.target.value})}
+                onChange={(e) => setStaffForm({ ...staffForm, fullName: e.target.value })}
               />
             </div>
             <div style={formGroupStyle}>
@@ -459,7 +523,7 @@ const AdminContent = ({ hospitalName }) => {
                 style={inputStyle}
                 type="email"
                 value={staffForm.email}
-                onChange={(e) => setStaffForm({...staffForm, email: e.target.value})}
+                onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
               />
             </div>
             <div style={formGroupStyle}>
@@ -469,7 +533,7 @@ const AdminContent = ({ hospitalName }) => {
                   style={inputStyle}
                   type={showPasswords.staff ? 'text' : 'password'}
                   value={staffForm.password}
-                  onChange={(e) => setStaffForm({...staffForm, password: e.target.value})}
+                  onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })}
                 />
                 <span onClick={() => togglePasswordVisibility('staff')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showPasswords.staff ? '🙈' : '👁️'}</span>
               </div>
@@ -479,14 +543,14 @@ const AdminContent = ({ hospitalName }) => {
               <select
                 style={inputStyle}
                 value={staffForm.hospitalId}
-                onChange={(e) => setStaffForm({...staffForm, hospitalId: e.target.value})}
+                onChange={(e) => setStaffForm({ ...staffForm, hospitalId: e.target.value })}
               >
                 <option value="">Select Institution</option>
                 {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </div>
             <button
-              style={{...buttonStyle, opacity: loading ? 0.7 : 1}}
+              style={{ ...buttonStyle, opacity: loading ? 0.7 : 1 }}
               disabled={loading}
               onClick={() => handleCreateUser(staffForm, 'Staff')}
             >
@@ -510,7 +574,7 @@ const AdminContent = ({ hospitalName }) => {
                 <input
                   style={inputStyle}
                   value={hospitalForm.name}
-                  onChange={(e) => setHospitalForm({...hospitalForm, name: e.target.value})}
+                  onChange={(e) => setHospitalForm({ ...hospitalForm, name: e.target.value })}
                 />
               </div>
               <div style={{ display: 'flex', gap: '15px' }}>
@@ -541,7 +605,7 @@ const AdminContent = ({ hospitalName }) => {
                 <input
                   style={inputStyle}
                   value={hospitalForm.contactPerson}
-                  onChange={(e) => setHospitalForm({...hospitalForm, contactPerson: e.target.value})}
+                  onChange={(e) => setHospitalForm({ ...hospitalForm, contactPerson: e.target.value })}
                 />
               </div>
               <div style={formGroupStyle}>
@@ -550,15 +614,15 @@ const AdminContent = ({ hospitalName }) => {
                   style={inputStyle}
                   type="email"
                   value={hospitalForm.email}
-                  onChange={(e) => setHospitalForm({...hospitalForm, email: e.target.value})}
+                  onChange={(e) => setHospitalForm({ ...hospitalForm, email: e.target.value })}
                 />
               </div>
               <div style={formGroupStyle}>
                 <label style={labelStyle}>Address</label>
                 <textarea
-                  style={{...inputStyle, height: '80px'}}
+                  style={{ ...inputStyle, height: '80px' }}
                   value={hospitalForm.address}
-                  onChange={(e) => setHospitalForm({...hospitalForm, address: e.target.value})}
+                  onChange={(e) => setHospitalForm({ ...hospitalForm, address: e.target.value })}
                 />
               </div>
               <div style={{ display: 'flex', gap: '15px' }}>
@@ -569,7 +633,7 @@ const AdminContent = ({ hospitalName }) => {
                     value={hospitalForm.pincode}
                     placeholder="e.g. 560012"
                     maxLength={10}
-                    onChange={(e) => setHospitalForm({...hospitalForm, pincode: e.target.value})}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, pincode: e.target.value })}
                   />
                 </div>
                 <div style={{ ...formGroupStyle, flex: 2 }}>
@@ -577,10 +641,10 @@ const AdminContent = ({ hospitalName }) => {
                   <select
                     style={inputStyle}
                     value={hospitalForm.state}
-                    onChange={(e) => setHospitalForm({...hospitalForm, state: e.target.value})}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, state: e.target.value })}
                   >
                     <option value="">Select State</option>
-                    {["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"].map(s => (
+                    {["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"].map(s => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
@@ -658,6 +722,92 @@ const AdminContent = ({ hospitalName }) => {
           )}
         </div>
       )}
+
+      {/* 5. Create Machine Details for Institution */}
+      <div style={accordionStyle}>
+        <div style={accordionHeaderStyle} onClick={() => toggleSection('machine')}>
+          5. Create Machine Details for Institution
+          <span>{expandedSection === 'machine' ? '−' : '+'}</span>
+        </div>
+        {expandedSection === 'machine' && (
+          <div style={accordionContentStyle}>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Select Institute</label>
+              <select
+                style={inputStyle}
+                value={machineForm.hospitalId}
+                onChange={(e) => {
+                  const selectedId = e.target.value;
+                  const selectedHospital = hospitals.find(h => h.id === selectedId);
+                  setMachineForm({
+                    ...machineForm,
+                    hospitalId: selectedId,
+                    hospitalShortName: selectedHospital ? selectedHospital.short_name : ''
+                  });
+                }}
+              >
+                <option value="">Select Institute</option>
+                {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Machine Name</label>
+              <input
+                style={inputStyle}
+                value={machineForm.machineName}
+                onChange={(e) => setMachineForm({ ...machineForm, machineName: e.target.value })}
+              />
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Machine Make</label>
+              <input
+                style={inputStyle}
+                value={machineForm.machineMake}
+                onChange={(e) => setMachineForm({ ...machineForm, machineMake: e.target.value })}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '15px' }}>
+              <div style={{ ...formGroupStyle, flex: 1 }}>
+                <label style={labelStyle}>Machine Technology</label>
+                <input
+                  style={inputStyle}
+                  value={machineForm.machineTechnology}
+                  onChange={(e) => setMachineForm({ ...machineForm, machineTechnology: e.target.value })}
+                />
+              </div>
+              <div style={{ ...formGroupStyle, flex: 1 }}>
+                <label style={labelStyle}>No. of Machine</label>
+                <input
+                  style={inputStyle}
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={machineForm.noOfMachines}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^[0-9]+$/.test(val)) {
+                      setMachineForm({ ...machineForm, noOfMachines: val });
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (['e', 'E', '+', '-', '.'].includes(e.key)) {
+                      e.preventDefault();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <button
+              style={{ ...buttonStyle, opacity: loading ? 0.7 : 1 }}
+              disabled={loading}
+              onClick={handleCreateMachine}
+            >
+              {loading ? 'Creating...' : 'Create Machine Detail'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
