@@ -1,19 +1,12 @@
 import logging
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-
 from ..db.session import get_db, get_questionnaire_db
 from ..mammogram_service import get_portal_mammogram_dashboard
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def _iso(v):
-    return v.isoformat() if v else None
-
 
 @router.get("/portal-stats")
 def get_mammogram_portal_stats(
@@ -33,5 +26,7 @@ def get_mammogram_portal_stats(
             "completionRate": {"viewsUploaded": 0, "totalSubjects": 0, "rate": 0.0},
             "byHospital": [],
             "hospitalTypeBreakdown": [],
+            "reportsByHospital": [],
+            "biradsByInstituteAndSide": [],
             "error": str(e),
         }

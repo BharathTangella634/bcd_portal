@@ -15,13 +15,13 @@ const AdminPage = () => {
     const role = localStorage.getItem('role')?.toLowerCase();
     const token = localStorage.getItem('token');
     const hospital = localStorage.getItem('hospitalName');
-    
+
     if (!token || !['admin', 'clinician', 'staff'].includes(role)) {
       navigate('/login');
     } else {
       setUserRole(role);
       setHospitalName(hospital || '');
-      
+
       // Redirect staff and doctor to their respective pages if they aren't admin
       if (role === 'staff') {
         navigate('/patient');
@@ -128,12 +128,20 @@ const AdminContent = ({ hospitalName }) => {
   const [hospitals, setHospitals] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(false);
-  
+
   // Forms states
   const [doctorForm, setDoctorForm] = useState({ fullName: '', email: '', password: '', hospitalId: '' });
   const [staffForm, setStaffForm] = useState({ fullName: '', email: '', password: '', hospitalId: '' });
-  const [hospitalForm, setHospitalForm] = useState({ name: '', contactPerson: '', email: '', address: '', pincode: '', state: '' });
+  const [hospitalForm, setHospitalForm] = useState({ name: '', shortName: '', contactPerson: '', email: '', address: '', pincode: '', state: '', modalityType: '' });
   const [adminForm, setAdminForm] = useState({ fullName: '', email: '', password: '', hospitalId: '' });
+  const [machineForm, setMachineForm] = useState({
+    hospitalId: '',
+    hospitalShortName: '',
+    machineName: '',
+    machineMake: '',
+    machineTechnology: '',
+    noOfMachines: ''
+  });
 
   useEffect(() => {
     fetchHospitals();
@@ -210,7 +218,7 @@ const AdminContent = ({ hospitalName }) => {
         const availableRoles = roles.map(r => r.name).join(', ');
         throw new Error(`Role "${roleName}" not found in the available roles: ${availableRoles}`);
       }
-      
+
       const token = localStorage.getItem('token');
       const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/v1/admin/users`, {
         method: 'POST',
@@ -226,7 +234,7 @@ const AdminContent = ({ hospitalName }) => {
           role_id: role.id
         })
       });
-      
+
       if (response.ok) {
         alert(`${roleName} account created successfully!`);
         // Reset form
@@ -259,8 +267,8 @@ const AdminContent = ({ hospitalName }) => {
   };
 
   const handleCreateHospital = async () => {
-    if (!hospitalForm.name || !hospitalForm.contactPerson || !hospitalForm.email || !hospitalForm.state) {
-      alert('Error: Institution Name, Contact Person, Email, and State are required.');
+    if (!hospitalForm.name || !hospitalForm.contactPerson || !hospitalForm.email || !hospitalForm.state || !hospitalForm.modalityType || !hospitalForm.shortName) {
+      alert('Error: Institution Name, Contact Person, Email, State and Modality Type are required.');
       return;
     }
     if (!isValidEmail(hospitalForm.email)) {
@@ -278,17 +286,19 @@ const AdminContent = ({ hospitalName }) => {
         },
         body: JSON.stringify({
           name: hospitalForm.name,
+          short_name: hospitalForm.shortName,
           contact_person: hospitalForm.contactPerson,
           email: hospitalForm.email,
           address: hospitalForm.address,
           pincode: hospitalForm.pincode,
-          state: hospitalForm.state
+          state: hospitalForm.state,
+          type: hospitalForm.modalityType
         })
       });
-      
+
       if (response.ok) {
         alert('Institution account created successfully!');
-        setHospitalForm({ name: '', contactPerson: '', email: '', address: '', pincode: '', state: '' });
+        setHospitalForm({ name: '', shortName: '', contactPerson: '', email: '', address: '', pincode: '', state: '', modalityType: '' });
         fetchHospitals(); // Refresh hospital list
       } else {
         const contentType = response.headers.get("content-type");
@@ -300,6 +310,62 @@ const AdminContent = ({ hospitalName }) => {
             message = detail.map(d => d.msg || JSON.stringify(d)).join('; ');
           } else {
             message = detail || 'Failed to create institution';
+          }
+          alert(`Error: ${message}`);
+        } else {
+          const errorText = await response.text();
+          console.error("Non-JSON error response:", errorText);
+          alert(`Error: Received non-JSON response from server. Status: ${response.status}`);
+        }
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateMachine = async () => {
+    if (!machineForm.hospitalId || !machineForm.machineName || !machineForm.machineMake || !machineForm.machineTechnology || !machineForm.noOfMachines) {
+      alert('Error: Institute, Machine Name, Machine Make, Machine Technology and No. of Machines are required.');
+      return;
+    }
+    if (!/^[0-9]+$/.test(machineForm.noOfMachines) || Number(machineForm.noOfMachines) <= 0) {
+      alert('Error: No. of Machines must be a positive whole number.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${process.env.REACT_APP_API_URL || ''}/api/v1/admin/machines`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          hospital_id: machineForm.hospitalId,
+          hospital_short_name: machineForm.hospitalShortName,
+          machine: machineForm.machineName,
+          make: machineForm.machineMake,
+          technology: machineForm.machineTechnology,
+          no_of_machines: Number(machineForm.noOfMachines)
+        })
+      });
+
+      if (response.ok) {
+        alert('Machine details created successfully!');
+        setMachineForm({ hospitalId: '', hospitalShortName: '', machineName: '', machineMake: '', machineTechnology: '', noOfMachines: '' });
+      } else {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          const error = await response.json();
+          const detail = error.detail;
+          let message;
+          if (Array.isArray(detail)) {
+            message = detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+          } else {
+            message = detail || 'Failed to create machine details';
           }
           alert(`Error: ${message}`);
         } else {
@@ -375,7 +441,7 @@ const AdminContent = ({ hospitalName }) => {
   return (
     <div style={{ color: '#333' }}>
       <h2 style={{ marginBottom: '20px', color: '#14868C' }}>Administrative Tasks</h2>
-      
+
       {/* 1. Create Clinician Account */}
       <div style={accordionStyle}>
         <div style={accordionHeaderStyle} onClick={() => toggleSection('doctor')}>
@@ -386,19 +452,19 @@ const AdminContent = ({ hospitalName }) => {
           <div style={accordionContentStyle}>
             <div style={formGroupStyle}>
               <label style={labelStyle}>Full Name</label>
-              <input 
-                style={inputStyle} 
-                value={doctorForm.fullName} 
-                onChange={(e) => setDoctorForm({...doctorForm, fullName: e.target.value})}
+              <input
+                style={inputStyle}
+                value={doctorForm.fullName}
+                onChange={(e) => setDoctorForm({ ...doctorForm, fullName: e.target.value })}
               />
             </div>
             <div style={formGroupStyle}>
               <label style={labelStyle}>Email</label>
-              <input 
-                style={inputStyle} 
-                type="email" 
+              <input
+                style={inputStyle}
+                type="email"
                 value={doctorForm.email}
-                onChange={(e) => setDoctorForm({...doctorForm, email: e.target.value})}
+                onChange={(e) => setDoctorForm({ ...doctorForm, email: e.target.value })}
               />
             </div>
             <div style={formGroupStyle}>
@@ -408,7 +474,7 @@ const AdminContent = ({ hospitalName }) => {
                   style={inputStyle}
                   type={showPasswords.doctor ? 'text' : 'password'}
                   value={doctorForm.password}
-                  onChange={(e) => setDoctorForm({...doctorForm, password: e.target.value})}
+                  onChange={(e) => setDoctorForm({ ...doctorForm, password: e.target.value })}
                 />
                 <span onClick={() => togglePasswordVisibility('doctor')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showPasswords.doctor ? '🙈' : '👁️'}</span>
               </div>
@@ -418,14 +484,14 @@ const AdminContent = ({ hospitalName }) => {
               <select
                 style={inputStyle}
                 value={doctorForm.hospitalId}
-                onChange={(e) => setDoctorForm({...doctorForm, hospitalId: e.target.value})}
+                onChange={(e) => setDoctorForm({ ...doctorForm, hospitalId: e.target.value })}
               >
                 <option value="">Select Institution</option>
                 {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </div>
             <button
-              style={{...buttonStyle, opacity: loading ? 0.7 : 1}}
+              style={{ ...buttonStyle, opacity: loading ? 0.7 : 1 }}
               disabled={loading}
               onClick={() => handleCreateUser(doctorForm, 'Clinician')}
             >
@@ -445,19 +511,19 @@ const AdminContent = ({ hospitalName }) => {
           <div style={accordionContentStyle}>
             <div style={formGroupStyle}>
               <label style={labelStyle}>Full Name</label>
-              <input 
-                style={inputStyle} 
+              <input
+                style={inputStyle}
                 value={staffForm.fullName}
-                onChange={(e) => setStaffForm({...staffForm, fullName: e.target.value})}
+                onChange={(e) => setStaffForm({ ...staffForm, fullName: e.target.value })}
               />
             </div>
             <div style={formGroupStyle}>
               <label style={labelStyle}>Email</label>
-              <input 
-                style={inputStyle} 
-                type="email" 
+              <input
+                style={inputStyle}
+                type="email"
                 value={staffForm.email}
-                onChange={(e) => setStaffForm({...staffForm, email: e.target.value})}
+                onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
               />
             </div>
             <div style={formGroupStyle}>
@@ -467,7 +533,7 @@ const AdminContent = ({ hospitalName }) => {
                   style={inputStyle}
                   type={showPasswords.staff ? 'text' : 'password'}
                   value={staffForm.password}
-                  onChange={(e) => setStaffForm({...staffForm, password: e.target.value})}
+                  onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })}
                 />
                 <span onClick={() => togglePasswordVisibility('staff')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showPasswords.staff ? '🙈' : '👁️'}</span>
               </div>
@@ -477,14 +543,14 @@ const AdminContent = ({ hospitalName }) => {
               <select
                 style={inputStyle}
                 value={staffForm.hospitalId}
-                onChange={(e) => setStaffForm({...staffForm, hospitalId: e.target.value})}
+                onChange={(e) => setStaffForm({ ...staffForm, hospitalId: e.target.value })}
               >
                 <option value="">Select Institution</option>
                 {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </div>
             <button
-              style={{...buttonStyle, opacity: loading ? 0.7 : 1}}
+              style={{ ...buttonStyle, opacity: loading ? 0.7 : 1 }}
               disabled={loading}
               onClick={() => handleCreateUser(staffForm, 'Staff')}
             >
@@ -505,35 +571,58 @@ const AdminContent = ({ hospitalName }) => {
             <div style={accordionContentStyle}>
               <div style={formGroupStyle}>
                 <label style={labelStyle}>Institution Name</label>
-                <input 
-                  style={inputStyle} 
+                <input
+                  style={inputStyle}
                   value={hospitalForm.name}
-                  onChange={(e) => setHospitalForm({...hospitalForm, name: e.target.value})}
+                  onChange={(e) => setHospitalForm({ ...hospitalForm, name: e.target.value })}
                 />
+              </div>
+              <div style={{ display: 'flex', gap: '15px' }}>
+                <div style={{ ...formGroupStyle, flex: 1 }}>
+                  <label style={labelStyle}>Short Name</label>
+                  <input
+                    style={inputStyle}
+                    value={hospitalForm.shortName}
+                    maxLength={20}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, shortName: e.target.value })}
+                  />
+                </div>
+                <div style={{ ...formGroupStyle, flex: 1 }}>
+                  <label style={labelStyle}>Modality Type</label>
+                  <select
+                    style={inputStyle}
+                    value={hospitalForm.modalityType}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, modalityType: e.target.value })}
+                  >
+                    <option value="">Select Modality Type</option>
+                    <option value="CR">CR</option>
+                    <option value="DR">DR</option>
+                  </select>
+                </div>
               </div>
               <div style={formGroupStyle}>
                 <label style={labelStyle}>Contact Person</label>
-                <input 
-                  style={inputStyle} 
+                <input
+                  style={inputStyle}
                   value={hospitalForm.contactPerson}
-                  onChange={(e) => setHospitalForm({...hospitalForm, contactPerson: e.target.value})}
+                  onChange={(e) => setHospitalForm({ ...hospitalForm, contactPerson: e.target.value })}
                 />
               </div>
               <div style={formGroupStyle}>
                 <label style={labelStyle}>Email</label>
-                <input 
-                  style={inputStyle} 
-                  type="email" 
+                <input
+                  style={inputStyle}
+                  type="email"
                   value={hospitalForm.email}
-                  onChange={(e) => setHospitalForm({...hospitalForm, email: e.target.value})}
+                  onChange={(e) => setHospitalForm({ ...hospitalForm, email: e.target.value })}
                 />
               </div>
               <div style={formGroupStyle}>
                 <label style={labelStyle}>Address</label>
                 <textarea
-                  style={{...inputStyle, height: '80px'}}
+                  style={{ ...inputStyle, height: '80px' }}
                   value={hospitalForm.address}
-                  onChange={(e) => setHospitalForm({...hospitalForm, address: e.target.value})}
+                  onChange={(e) => setHospitalForm({ ...hospitalForm, address: e.target.value })}
                 />
               </div>
               <div style={{ display: 'flex', gap: '15px' }}>
@@ -544,7 +633,7 @@ const AdminContent = ({ hospitalName }) => {
                     value={hospitalForm.pincode}
                     placeholder="e.g. 560012"
                     maxLength={10}
-                    onChange={(e) => setHospitalForm({...hospitalForm, pincode: e.target.value})}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, pincode: e.target.value })}
                   />
                 </div>
                 <div style={{ ...formGroupStyle, flex: 2 }}>
@@ -552,17 +641,17 @@ const AdminContent = ({ hospitalName }) => {
                   <select
                     style={inputStyle}
                     value={hospitalForm.state}
-                    onChange={(e) => setHospitalForm({...hospitalForm, state: e.target.value})}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, state: e.target.value })}
                   >
                     <option value="">Select State</option>
-                    {["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Andaman and Nicobar Islands","Chandigarh","Dadra and Nagar Haveli and Daman and Diu","Delhi","Jammu and Kashmir","Ladakh","Lakshadweep","Puducherry"].map(s => (
+                    {["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"].map(s => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
                 </div>
               </div>
               <button
-                style={{...buttonStyle, opacity: loading ? 0.7 : 1}}
+                style={{ ...buttonStyle, opacity: loading ? 0.7 : 1 }}
                 disabled={loading}
                 onClick={handleCreateHospital}
               >
@@ -584,19 +673,19 @@ const AdminContent = ({ hospitalName }) => {
             <div style={accordionContentStyle}>
               <div style={formGroupStyle}>
                 <label style={labelStyle}>Full Name</label>
-                <input 
-                  style={inputStyle} 
+                <input
+                  style={inputStyle}
                   value={adminForm.fullName}
-                  onChange={(e) => setAdminForm({...adminForm, fullName: e.target.value})}
+                  onChange={(e) => setAdminForm({ ...adminForm, fullName: e.target.value })}
                 />
               </div>
               <div style={formGroupStyle}>
                 <label style={labelStyle}>Email</label>
-                <input 
-                  style={inputStyle} 
-                  type="email" 
+                <input
+                  style={inputStyle}
+                  type="email"
                   value={adminForm.email}
-                  onChange={(e) => setAdminForm({...adminForm, email: e.target.value})}
+                  onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
                 />
               </div>
               <div style={formGroupStyle}>
@@ -606,7 +695,7 @@ const AdminContent = ({ hospitalName }) => {
                     style={inputStyle}
                     type={showPasswords.admin ? 'text' : 'password'}
                     value={adminForm.password}
-                    onChange={(e) => setAdminForm({...adminForm, password: e.target.value})}
+                    onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
                   />
                   <span onClick={() => togglePasswordVisibility('admin')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '18px', userSelect: 'none' }}>{showPasswords.admin ? '🙈' : '👁️'}</span>
                 </div>
@@ -616,14 +705,14 @@ const AdminContent = ({ hospitalName }) => {
                 <select
                   style={inputStyle}
                   value={adminForm.hospitalId}
-                  onChange={(e) => setAdminForm({...adminForm, hospitalId: e.target.value})}
+                  onChange={(e) => setAdminForm({ ...adminForm, hospitalId: e.target.value })}
                 >
                   <option value="">Select Institution</option>
                   {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
                 </select>
               </div>
-              <button 
-                style={{...buttonStyle, opacity: loading ? 0.7 : 1}} 
+              <button
+                style={{ ...buttonStyle, opacity: loading ? 0.7 : 1 }}
                 disabled={loading}
                 onClick={() => handleCreateUser(adminForm, 'Admin')}
               >
@@ -633,6 +722,92 @@ const AdminContent = ({ hospitalName }) => {
           )}
         </div>
       )}
+
+      {/* 5. Create Machine Details for Institution */}
+      <div style={accordionStyle}>
+        <div style={accordionHeaderStyle} onClick={() => toggleSection('machine')}>
+          5. Create Machine Details for Institution
+          <span>{expandedSection === 'machine' ? '−' : '+'}</span>
+        </div>
+        {expandedSection === 'machine' && (
+          <div style={accordionContentStyle}>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Select Institute</label>
+              <select
+                style={inputStyle}
+                value={machineForm.hospitalId}
+                onChange={(e) => {
+                  const selectedId = e.target.value;
+                  const selectedHospital = hospitals.find(h => h.id === selectedId);
+                  setMachineForm({
+                    ...machineForm,
+                    hospitalId: selectedId,
+                    hospitalShortName: selectedHospital ? selectedHospital.short_name : ''
+                  });
+                }}
+              >
+                <option value="">Select Institute</option>
+                {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </select>
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Machine Name</label>
+              <input
+                style={inputStyle}
+                value={machineForm.machineName}
+                onChange={(e) => setMachineForm({ ...machineForm, machineName: e.target.value })}
+              />
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Machine Make</label>
+              <input
+                style={inputStyle}
+                value={machineForm.machineMake}
+                onChange={(e) => setMachineForm({ ...machineForm, machineMake: e.target.value })}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '15px' }}>
+              <div style={{ ...formGroupStyle, flex: 1 }}>
+                <label style={labelStyle}>Machine Technology</label>
+                <input
+                  style={inputStyle}
+                  value={machineForm.machineTechnology}
+                  onChange={(e) => setMachineForm({ ...machineForm, machineTechnology: e.target.value })}
+                />
+              </div>
+              <div style={{ ...formGroupStyle, flex: 1 }}>
+                <label style={labelStyle}>No. of Machine</label>
+                <input
+                  style={inputStyle}
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={machineForm.noOfMachines}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^[0-9]+$/.test(val)) {
+                      setMachineForm({ ...machineForm, noOfMachines: val });
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (['e', 'E', '+', '-', '.'].includes(e.key)) {
+                      e.preventDefault();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <button
+              style={{ ...buttonStyle, opacity: loading ? 0.7 : 1 }}
+              disabled={loading}
+              onClick={handleCreateMachine}
+            >
+              {loading ? 'Creating...' : 'Create Machine Detail'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

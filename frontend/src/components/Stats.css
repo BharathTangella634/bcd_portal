@@ -552,3 +552,30 @@
   color: #7f8c8d;
   font-size: clamp(0.65rem, 0.76vw, 0.75rem);
 }
+
+.category-chart-inner {
+  height: 100%;
+}
+
+@media (max-width: 768px) {
+  .category-chart-inner {
+    min-width: 520px;
+  }
+}
+
+@media (max-width: 480px) {
+  .category-chart-inner {
+    min-width: 650px;
+  }
+}
+
+.category-chart-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+
+@media (max-width: 768px) {
+  .birads-charts-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

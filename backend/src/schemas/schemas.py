@@ -49,9 +49,12 @@ class HospitalBase(BaseModel):
     address: Optional[str] = None
     pincode: Optional[str] = None
     state: Optional[str] = None
+    type: Optional[str] = None
 
 class HospitalCreate(HospitalBase):
     state: str
+    type: str
+    short_name: str
 
 class HospitalResponse(HospitalBase):
     id: str
@@ -186,3 +189,28 @@ class DoctorAssessmentCreate(BaseModel):
     us_biopsy_density: Optional[str] = None
     precision_diagnosis: Optional[str] = None
     datapoint_feedback: Optional[str] = None
+
+class MachineBase(BaseModel):
+    machine: str
+    make: Optional[str] = None
+    technology: Optional[str] = None
+    no_of_machines: int = 1
+
+    @field_validator('no_of_machines')
+    @classmethod
+    def validate_no_of_machines(cls, v):
+        if v <= 0:
+            raise ValueError('no_of_machines must be a positive number')
+        return v
+
+class MachineCreate(MachineBase):
+    hospital_id: str
+    hospital_short_name: Optional[str] = None
+
+class MachineResponse(MachineBase):
+    id: int
+    hospital_id: str
+    hospital_short_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True

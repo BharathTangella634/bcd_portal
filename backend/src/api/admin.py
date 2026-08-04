@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from ..db.session import get_db
-from ..models.models import User, Hospital, Role
-from ..schemas.schemas import UserCreate, HospitalCreate, User as UserSchema, HospitalResponse
+from ..models.models import User, Hospital, Role, Machine
+from ..schemas.schemas import UserCreate, HospitalCreate, User as UserSchema, HospitalResponse, MachineCreate, MachineResponse
 from ..core.security import get_password_hash
 from ..core.email import send_template_email
 from .auth import get_current_user
@@ -62,7 +62,8 @@ def create_hospital(
         email=hospital_in.email,
         address=hospital_in.address,
         pincode=hospital_in.pincode,
-        state=hospital_in.state
+        state=hospital_in.state,
+        type=hospital_in.type
     )
     db.add(db_hospital)
     db.commit()
@@ -153,3 +154,39 @@ def get_roles(
     current_user: dict = Depends(check_admin_role)
 ):
     return db.query(Role).all()
+
+
+@router.post("/machines", response_model=MachineResponse)
+def create_machine(
+    machine_in: MachineCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(check_admin_role)
+):
+    hospital = db.query(Hospital).filter(Hospital.id == machine_in.hospital_id).first()
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found.")
+
+    if current_user.get("hospital_name") != "Test" and current_user.get("hospital_id") != machine_in.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only create machine details for your own institution.",
+        )
+
+    if machine_in.hospital_short_name and hospital.short_name and machine_in.hospital_short_name != hospital.short_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Hospital short name does not match the selected institute.",
+        )
+
+    db_machine = Machine(
+        hospital_id=machine_in.hospital_id,
+        hospital_short_name=machine_in.hospital_short_name or hospital.short_name,
+        machine=machine_in.machine,
+        make=machine_in.make,
+        technology=machine_in.technology,
+        no_of_machines=machine_in.no_of_machines
+    )
+    db.add(db_machine)
+    db.commit()
+    db.refresh(db_machine)
+    return db_machine

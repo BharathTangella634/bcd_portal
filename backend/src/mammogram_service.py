@@ -1,4 +1,5 @@
 import logging
+from collections import Counter, defaultdict
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, text
 from .models.models import Attachment, DoctorAssessment, Hospital, PatientSession, Machine
@@ -12,8 +13,16 @@ MAMMOGRAM_VIEW_TYPES = [
     'mammo_mlo_right',
 ]
 
+REPORT_FILE_TYPES = [
+    'mammo_reading',
+    'us_reading',
+]
+
 EXCLUDED_HOSPITAL_NAMES = ('Test', 'Tanuh Foundation')
 INSTITUTE_QUESTIONS = ('Institute Name', 'Institute Name:', 'Enter the Hospital ID(If any, else leave):', 'Q45')
+
+VALID_BIRADS = {'0', '1', '2', '3', '4', '5'}
+
 
 def _get_institute_filter():
     return """
@@ -25,7 +34,6 @@ def _get_institute_filter():
         GROUP BY session_id
     ) sd_inst ON s.session_id = sd_inst.session_id
     """
-
 
 def get_view_type_counts(db: Session) -> dict:
     view_counts = {}
@@ -60,14 +68,15 @@ def get_total_subjects_count(db: Session, questionnaire_db: Session) -> int:
 
 
 def get_total_mammogram_stats(db: Session, questionnaire_db: Session) -> dict:
-    """
-    'imaging_studies' now uses the same questionnaire-DB subject count as
-    completionRate.totalSubjects (591), instead of the app-DB PatientSession count.
-    """
     imaging_studies_count = get_total_subjects_count(db, questionnaire_db)
 
-    report_count = db.query(func.count(Attachment.id)).filter(
-        Attachment.file_type == 'mammo_reading'
+    report_count = db.query(func.count(Attachment.id)).join(
+        DoctorAssessment, Attachment.assessment_id == DoctorAssessment.id
+    ).join(
+        Hospital, DoctorAssessment.hospital_id == Hospital.id
+    ).filter(
+        Attachment.file_type.in_(REPORT_FILE_TYPES),
+        ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES))
     ).scalar() or 0
 
     return {
@@ -101,41 +110,41 @@ def get_partial_sets_count(db: Session) -> int:
     return partial
 
 
-def _report_count_subquery(db: Session):
-    return db.query(func.count(Attachment.id)).filter(
-        Attachment.assessment_id == DoctorAssessment.id,
-        Attachment.file_type == 'mammo_reading'
-    ).correlate(DoctorAssessment).scalar_subquery()
-
-
 def get_report_uploaded_count(db: Session) -> int:
-    subq = _report_count_subquery(db)
-    return db.query(func.count(DoctorAssessment.id)).filter(subq >= 1).scalar() or 0
+
+    return db.query(func.count(func.distinct(DoctorAssessment.id))).join(
+        Attachment, Attachment.assessment_id == DoctorAssessment.id
+    ).join(
+        Hospital, DoctorAssessment.hospital_id == Hospital.id
+    ).filter(
+        Attachment.file_type.in_(REPORT_FILE_TYPES),
+        ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES))
+    ).scalar() or 0
 
 
 def get_report_missing_count(db: Session) -> int:
-    subq = _report_count_subquery(db)
-    return db.query(func.count(DoctorAssessment.id)).filter(subq == 0).scalar() or 0
+    total = get_total_assessments_count(db)
+    uploaded = get_report_uploaded_count(db)
+    return max(total - uploaded, 0)
 
 
 def get_reports_by_hospital(db: Session) -> list:
+    report_count_subq = db.query(func.count(Attachment.id)).join(
+        DoctorAssessment, Attachment.assessment_id == DoctorAssessment.id
+    ).filter(
+        DoctorAssessment.hospital_id == Hospital.id,
+        Attachment.file_type.in_(REPORT_FILE_TYPES)
+    ).correlate(Hospital).scalar_subquery()
+
     results = db.query(
         Hospital.id,
         Hospital.name,
         Hospital.short_name,
-        func.count(Attachment.id).label('report_count'),
-    ).outerjoin(
-        DoctorAssessment, DoctorAssessment.hospital_id == Hospital.id
-    ).outerjoin(
-        Attachment,
-        (Attachment.assessment_id == DoctorAssessment.id) &
-        (Attachment.file_type == 'mammo_reading')
+        report_count_subq.label('report_count'),
     ).filter(
         ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES))
-    ).group_by(
-        Hospital.id, Hospital.name, Hospital.short_name
     ).order_by(
-        func.count(Attachment.id).desc()
+        report_count_subq.desc()
     ).all()
 
     return [
@@ -168,7 +177,7 @@ def get_mammogram_by_hospital(db: Session) -> list:
         DoctorAssessment, Attachment.assessment_id == DoctorAssessment.id
     ).filter(
         DoctorAssessment.hospital_id == Hospital.id,
-        Attachment.file_type == 'mammo_reading'
+        Attachment.file_type.in_(REPORT_FILE_TYPES)
     ).correlate(Hospital).scalar_subquery()
 
     results = db.query(
@@ -215,10 +224,6 @@ def get_mammogram_by_hospital(db: Session) -> list:
     return hospital_data
 
 def get_hospital_type_breakdown(db: Session) -> list:
-    """
-    Returns CR/DR counts for a pie chart. Each slice includes the list of
-    hospitals in that group, so the frontend can show hospital details on hover.
-    """
     rows = db.query(
         Hospital.id,
         Hospital.name,
@@ -254,7 +259,11 @@ def get_hospital_type_breakdown(db: Session) -> list:
     return breakdown
 
 def get_total_assessments_count(db: Session) -> int:
-    return db.query(func.count(DoctorAssessment.id)).scalar() or 0
+    return db.query(func.count(DoctorAssessment.id)).join(
+        Hospital, DoctorAssessment.hospital_id == Hospital.id
+    ).filter(
+        ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES))
+    ).scalar() or 0
 
 
 def get_total_views_uploaded_count(db: Session) -> int:
@@ -274,6 +283,63 @@ def get_completion_rate(db: Session, questionnaire_db: Session) -> dict:
         "rate": rate,
     }
 
+def get_birads_by_institute_and_side(db: Session) -> dict:
+    ranked = db.query(
+        DoctorAssessment.id.label('assessment_id'),
+        DoctorAssessment.patient_session_id,
+        DoctorAssessment.mammo_birads,
+        DoctorAssessment.mammo_density,
+        func.row_number().over(
+            partition_by=DoctorAssessment.patient_session_id,
+            order_by=DoctorAssessment.created_at.desc()
+        ).label('rn')
+    ).subquery()
+
+    image_count_subq = db.query(func.count(Attachment.id)).filter(
+        Attachment.assessment_id == ranked.c.assessment_id,
+        Attachment.file_type.in_(MAMMOGRAM_VIEW_TYPES)
+    ).correlate(ranked).scalar_subquery()
+
+    rows = db.query(
+        ranked.c.patient_session_id,
+        ranked.c.mammo_birads,
+        ranked.c.mammo_density,
+        image_count_subq.label('image_count'),
+    ).filter(ranked.c.rn == 1).all()
+
+    birads = defaultdict(lambda: {"subjects": set(), "images": 0})
+    density = defaultdict(lambda: {"subjects": set(), "images": 0})
+
+    for patient_id, birads_value, density_value, image_count in rows:
+        image_count = image_count or 0
+
+        if birads_value:
+            birads[str(birads_value)]["subjects"].add(patient_id)
+            birads[str(birads_value)]["images"] += image_count
+
+        if density_value:
+            density[str(density_value)]["subjects"].add(patient_id)
+            density[str(density_value)]["images"] += image_count
+
+    return {
+        "biradsCategory": [
+            {
+                "category": category,
+                "subjects": len(data["subjects"]),
+                "images": data["images"],
+            }
+            for category, data in sorted(birads.items())
+        ],
+        "biradsDensity": [
+            {
+                "density": density_name,
+                "subjects": len(data["subjects"]),
+                "images": data["images"],
+            }
+            for density_name, data in sorted(density.items())
+        ],
+    }
+
 
 def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> dict:
     total_assessments = get_total_assessments_count(db)
@@ -282,12 +348,12 @@ def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> di
     no_mammogram = max(total_assessments - complete_sets - partial_sets, 0)
     report_uploaded = get_report_uploaded_count(db)
     report_missing = max(total_assessments - report_uploaded, 0)
-
     view_counts = get_view_type_counts(db)
     totals = get_total_mammogram_stats(db, questionnaire_db)
     by_hospital = get_mammogram_by_hospital(db)
     hospital_type_breakdown = get_hospital_type_breakdown(db)
-    reports_by_hospital = get_reports_by_hospital(db)   # <-- new
+    reports_by_hospital = get_reports_by_hospital(db)   # <-- now GCS-based
+    birads_stats = get_birads_by_institute_and_side(db)
 
     return {
         "totalAssessments": total_assessments,
@@ -307,5 +373,7 @@ def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> di
         "completionRate": get_completion_rate(db, questionnaire_db),
         "byHospital": by_hospital,
         "hospitalTypeBreakdown": hospital_type_breakdown,
-        "reportsByHospital": reports_by_hospital,   # <-- new
+        "reportsByHospital": reports_by_hospital,   # <-- now GCS-based
+        "biradsCategory": birads_stats["biradsCategory"],
+        "biradsDensity": birads_stats["biradsDensity"],
     }

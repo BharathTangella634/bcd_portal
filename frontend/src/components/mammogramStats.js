@@ -13,7 +13,54 @@ const CR_DR_LABELS = {
   Unassigned: 'Unassigned',
 };
 
+const DENSITY_COLORS = ['#6ee7b7', '#fde047', '#fb923c', '#c0433e'];
+
+function getDensityColor(index) {
+  return DENSITY_COLORS[Math.min(index, DENSITY_COLORS.length - 1)];
+}
+
 const ORBIT_COLORS = ['#2563eb', '#0ea5a3', '#22c55e', '#3b82f6', '#0d9488', '#16a34a'];
+
+const EXCLUDED_NAME_PATTERN = /test|tanuh/i;
+
+const isExcludedEntity = (entity) => {
+  if (!entity) return false;
+  const candidates = [entity.hospital_name, entity.short_name, entity.name];
+  return candidates.some((n) => typeof n === 'string' && EXCLUDED_NAME_PATTERN.test(n));
+};
+
+const filterExcludedEntities = (list) => (list || []).filter((entity) => !isExcludedEntity(entity));
+
+const getInstituteKey = (entity) =>
+  (entity?.short_name || entity?.hospital_name || entity?.name || '').trim().toLowerCase();
+
+const mergeDuplicateInstitutes = (list) => {
+  const order = [];
+  const byKey = new Map();
+
+  (list || []).forEach((entity) => {
+    const key = getInstituteKey(entity);
+    if (!byKey.has(key)) {
+      byKey.set(key, { ...entity, machines: [...(entity.machines || [])] });
+      order.push(key);
+    } else {
+      const existing = byKey.get(key);
+      existing.machines = [...existing.machines, ...(entity.machines || [])];
+    }
+  });
+
+  return order.map((key) => byKey.get(key));
+};
+
+const BIRADS_ZONES = [
+  { from: 0, to: 1, color: '#b7c9e8' }, // 0 - incomplete
+  { from: 1, to: 2, color: '#0ea5a3' }, // 1 - negative
+  { from: 2, to: 3, color: '#6ee7b7' }, // 2 - benign
+  { from: 3, to: 4, color: '#fde047' }, // 3 - probably benign
+  { from: 4, to: 5, color: '#fb923c' }, // 4 - suspicious
+  { from: 5, to: 6, color: '#c0433e' }, // 5 - highly suggestive of malignancy
+  // { from: 6, to: 7, color: '#c0433e' }, // 6 - known biopsy-proven malignancy
+];
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null;
@@ -121,31 +168,295 @@ function hexPoints(cx, cy, r) {
   return pts.join(' ');
 }
 
-const thStyle = {
-  padding: '10px 12px',
-  textAlign: 'left',
-  fontFamily: 'Poppins',
-  fontSize: 12.5,
-  fontWeight: 600,
-  color: '#14868C',
-  borderBottom: '2px solid rgba(20,134,140,0.15)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.4px',
+function ensureAllBiradsCategories(categories) {
+  const requiredCategories = ['0', '1', '2', '3', '4', '5'];
+
+  const categoryMap = Object.fromEntries(
+    categories.map((c) => [c.category, c])
+  );
+
+  return requiredCategories.map((category) => {
+    return (
+      categoryMap[category] || {
+        category,
+        total: 0,
+        perInstitute: [],
+      }
+    );
+  });
+}
+
+function aggregateCategoryCounts(biradsByInstituteAndSide, side) {
+  const categoryMap = {};
+
+  filterExcludedEntities(biradsByInstituteAndSide).forEach((inst) => {
+    const counts = (inst[side] && inst[side].birads_counts) || {};
+    Object.entries(counts).forEach(([key, count]) => {
+      const num = parseFloat(key);
+      if (isNaN(num)) return;
+      const catKey = String(Math.trunc(num));
+      if (!categoryMap[catKey]) {
+        categoryMap[catKey] = { total: 0, perInstitute: [] };
+      }
+      categoryMap[catKey].total += count;
+      categoryMap[catKey].perInstitute.push({
+        name: inst.short_name || inst.hospital_name,
+        count,
+      });
+    });
+  });
+
+  return Object.entries(categoryMap)
+    .map(([category, val]) => ({
+      category,
+      total: val.total,
+      perInstitute: val.perInstitute.sort((a, b) => b.count - a.count),
+    }))
+    .sort((a, b) => parseInt(a.category, 10) - parseInt(b.category, 10));
+}
+
+function getZoneColor(value) {
+  const clamped = Math.max(0, Math.min(value, 6));
+  const zone = BIRADS_ZONES.find((z) => clamped >= z.from && clamped < z.to);
+  return (zone || BIRADS_ZONES[BIRADS_ZONES.length - 1]).color;
+}
+
+const BiradsLegend = ({ payload }) => (
+  <ul className="custom-legend">
+    {(payload || []).map((entry, index) => (
+      <li key={`item-${index}`} className="legend-item">
+        <span
+          style={{
+            width: 11,
+            height: 11,
+            borderRadius: 2,
+            backgroundColor: entry.color,
+            display: 'inline-block',
+          }}
+        />
+        <span
+          className="legend-text"
+          style={{ color: '#14868C', fontWeight: 600, fontFamily: 'Poppins' }}
+        >
+          {entry.value}
+        </span>
+      </li>
+    ))}
+  </ul>
+);
+
+const BiradsTooltip = ({ active, payload, label, categoryKey }) => {
+  if (!active || !payload || !payload.length) return null;
+  const prefix = categoryKey === 'density' ? 'BIRADS Density' : 'BIRADS';
+  const row = payload[0]?.payload || {};
+
+  return (
+    <div className="custom-tooltip">
+      <p className="tooltip-title">{prefix} {label}</p>
+      {payload.map((entry, i) => (
+        <div key={i} className="tooltip-item">
+          <span className="dot" style={{ backgroundColor: entry.color || entry.fill }} />
+          <span className="name">Total Subjects:</span>
+          <span className="value">{entry.value}</span>
+        </div>
+      ))}
+      {typeof row.images === 'number' && (
+        <div className="tooltip-item">
+          <span className="dot" style={{ backgroundColor: 'transparent' }} />
+          <span className="name">Total Images:</span>
+          <span className="value">{row.images}</span>
+        </div>
+      )}
+    </div>
+  );
 };
 
-const tdStyle = {
-  padding: '9px 12px',
-  fontFamily: 'Poppins',
-  fontSize: 13,
-  color: '#374151',
-  borderBottom: '1px solid #f1f1f1',
+function getResponsiveBarSize(containerWidth) {
+  const MIN_WIDTH = 320;
+  const MAX_WIDTH = 1440;
+  const MIN_BAR = 22;
+  const MAX_BAR = 64;
+
+  const clampedWidth = Math.min(Math.max(containerWidth, MIN_WIDTH), MAX_WIDTH);
+  const ratio = (clampedWidth - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH);
+  return Math.round(MIN_BAR + ratio * (MAX_BAR - MIN_BAR));
+}
+
+const BiradsStatsChart = ({ title, data = [], categoryKey, yMax, getBarColor, seriesName }) => {
+  const chartData = data || [];
+
+  const tickStep = 50;
+  const yTicks = [];
+  for (let t = 0; t <= yMax; t += tickStep) {
+    yTicks.push(t);
+  }
+
+  const barSize = getResponsiveBarSize(window.innerWidth);
+
+  return (
+    <div className="chart-card" style={{ padding: '0px 0px 10px' }}>
+      <h3 style={{ paddingTop: 20, color: '#14868C' }}>{title}</h3>
+
+      <div className="chart-wrapper" style={{ height: 400 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={chartData}
+            barCategoryGap={16}
+            barGap={2}
+          >
+            <CartesianGrid
+              yAxisId="left"
+              strokeDasharray="4 4"
+              vertical={false}
+              stroke="#059669"
+              strokeOpacity={0.1}
+            />
+
+            <XAxis
+              dataKey={categoryKey}
+              interval={0}
+              angle={window.innerWidth < 600 ? -35 : 0}
+              textAnchor={window.innerWidth < 600 ? "end" : "middle"}
+              height={window.innerWidth < 600 ? 85 : 30}
+              axisLine={{ stroke: '#cbd5e1', strokeOpacity: 0.8 }}
+              tickLine={false}
+              tick={{
+                fontFamily: "Poppins",
+                fontSize: window.innerWidth < 768 ? 10 : 15,
+                fontWeight: 400,
+                fill: "#94a3b8",
+              }}
+            />
+
+            <YAxis
+              yAxisId="left"
+              domain={[0, yMax]}
+              ticks={yTicks}
+              allowDecimals={false}
+              axisLine={{ stroke: '#cbd5e1', strokeOpacity: 0.8 }}
+              tickLine={false}
+              tick={{
+                fontFamily: 'Poppins',
+                fontSize: 11,
+                fontWeight: 400,
+                fill: '#94a3b8',
+              }}
+              label={{
+                value: 'No. of Subjects',
+                angle: -90,
+                position: 'insideLeft',
+                offset: 12,
+                style: {
+                  textAnchor: 'middle',
+                  fontFamily: 'Poppins',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  fill: '#14868C',
+                },
+              }}
+            />
+
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              domain={[0, yMax]}
+              ticks={yTicks}
+              allowDecimals={false}
+              axisLine={{ stroke: '#cbd5e1', strokeOpacity: 0.8 }}
+              tickLine={false}
+              tick={{
+                fontFamily: 'Poppins',
+                fontSize: 11,
+                fontWeight: 400,
+                fill: '#94a3b8',
+              }}
+              width={36}
+            />
+
+            <Tooltip
+              content={<BiradsTooltip categoryKey={categoryKey} />}
+              wrapperStyle={{ left: '50%', top: 0, transform: 'translateX(-50%)' }}
+            />
+
+            <Legend
+              verticalAlign="bottom"
+              content={<BiradsLegend />}
+              wrapperStyle={{
+                paddingTop: 0,
+                marginTop: -4,
+              }}
+            />
+
+            <Bar
+              yAxisId="left"
+              dataKey="subjects"
+              name={seriesName}
+              radius={[2, 2, 0, 0]}
+              barSize={barSize}
+            >
+              {chartData.map((entry, idx) => (
+                <Cell key={idx} fill={getBarColor ? getBarColor(entry, idx) : '#6ee7b7'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+
+const getInstituteTooltipLayout = (variant = 'default') => {
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  if (variant === 'orbit') {
+    const positionStyle = {
+      position: 'absolute',
+      left: '50%',
+      top: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: isMobile ? 'calc(100% - 32px)' : undefined,
+      maxWidth: isMobile ? 280 : 320,
+      maxHeight: 'calc(100% - 32px)',
+      overflowY: 'auto',
+      boxSizing: 'border-box',
+    };
+
+    const sizing = isMobile
+      ? { padding: '8px 12px', titleSize: 12, labelSize: 10.5, valueSize: 10.5, rowGap: 5, rowPad: '1px 0' }
+      : { padding: '12px 14px', titleSize: 13, labelSize: 12.5, valueSize: 12.5, rowGap: 10, rowPad: '2px 0' };
+
+    return { isMobile, positionStyle, sizing };
+  }
+
+  const positionStyle = isMobile
+    ? {
+      position: 'absolute',
+      left: '50%',
+      top: '100%',
+      bottom: 'auto',
+      transform: 'translateX(-50%)',
+      marginTop: 6,
+      width: '88%',
+      maxWidth: '88%',
+    }
+    : {
+      left: '50%',
+      top: '50%',
+      transform: 'translate(-50%, -50%)',
+    };
+
+  const sizing = isMobile
+    ? { padding: '8px 12px', titleSize: 12, labelSize: 10.5, valueSize: 10.5, rowGap: 5, rowPad: '1px 0' }
+    : { padding: '12px 14px', titleSize: 13, labelSize: 12.5, valueSize: 12.5, rowGap: 10, rowPad: '2px 0' };
+
+  return { isMobile, positionStyle, sizing };
 };
 
 const InstituteMachineTable = ({ byHospital }) => {
   const [hover, setHover] = useState(null); // { institute, machines, x, y }
   const wrapperRef = React.useRef(null);
 
-  const hospitals = (byHospital || [])
+  const hospitals = filterExcludedEntities(byHospital)
     .map((h) => ({
       name: h.short_name || h.hospital_name || h.name || 'Unknown',
       machines: h.machines && h.machines.length > 0 ? h.machines : [],
@@ -210,27 +521,54 @@ const InstituteMachineTable = ({ byHospital }) => {
         </tbody>
       </table>
 
-      {hover && (
-        <div
-          className="institute-hover-tooltip"
-          style={{ left: hover.x, top: hover.y }}
-        >
-          <div className="institute-hover-title">{hover.institute}</div>
-          <ul className="institute-hover-list">
-            {hover.machines.map((m, i) => (
-              <li key={i} className="institute-hover-item">
-                <span className="institute-hover-machine">{m.machine_name}</span>
-                <span className="institute-hover-meta">
-                  {[m.make, m.technology].filter(Boolean).join(' · ')}
-                  {m.machine_count ? ` · x${m.machine_count}` : ''}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {hover && (() => {
+        const { positionStyle, sizing } = getInstituteTooltipLayout();
+        return (
+          <div
+            className="institute-hover-tooltip"
+            style={{ ...positionStyle, padding: sizing.padding }}
+          >
+            <div className="institute-hover-title" style={{ fontSize: sizing.titleSize }}>
+              {hover.institute}
+            </div>
+            <ul className="institute-hover-list" style={{ rowGap: sizing.rowGap }}>
+              {hover.machines.map((m, i) => (
+                <li key={i} className="institute-hover-item" style={{ padding: sizing.rowPad }}>
+                  <span className="institute-hover-machine" style={{ fontSize: sizing.valueSize }}>
+                    {m.machine_name}
+                  </span>
+                  <span className="institute-hover-meta" style={{ fontSize: sizing.labelSize }}>
+                    {[m.make, m.technology].filter(Boolean).join(' · ')}
+                    {m.machine_count ? ` · x${m.machine_count}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
     </div>
   );
+};
+
+const thStyle = {
+  padding: '10px 12px',
+  textAlign: 'left',
+  fontFamily: 'Poppins',
+  fontSize: 12.5,
+  fontWeight: 600,
+  color: '#14868C',
+  borderBottom: '2px solid rgba(20,134,140,0.15)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.4px',
+};
+
+const tdStyle = {
+  padding: '9px 12px',
+  fontFamily: 'Poppins',
+  fontSize: 13,
+  color: '#374151',
+  borderBottom: '1px solid #f1f1f1',
 };
 
 const InstituteOrbitCloud = ({ byHospital }) => {
@@ -238,7 +576,7 @@ const InstituteOrbitCloud = ({ byHospital }) => {
   const [hoverInfo, setHoverInfo] = useState(null);
   const wrapperRef = React.useRef(null);
 
-  const hospitals = (byHospital || [])
+  const hospitals = filterExcludedEntities(byHospital)
     .map((h) => {
       const machines = h.machines && h.machines.length > 0 ? h.machines : [];
       const total = machines.reduce((s, m) => s + (m.machine_count || 0), 0);
@@ -254,8 +592,8 @@ const InstituteOrbitCloud = ({ byHospital }) => {
     return <p style={{ textAlign: 'center', color: '#6b7280' }}>No institute data available.</p>;
   }
 
-  const NODE_RADIUS = 30; // slightly bigger nodes
-  const size = 640; // increased from 580
+  const NODE_RADIUS = 30;
+  const size = 640; 
   const center = size / 2;
   const orbitRadius = size / 2 - 105;
 
@@ -295,12 +633,13 @@ const InstituteOrbitCloud = ({ byHospital }) => {
         border: '1px solid #e2e8f0',
         marginTop: 0,
         paddingTop: 0,
+        overflow: 'visible',
       }}
     >
       <div
         className="orbit-cloud-svg-wrap"
         ref={wrapperRef}
-        style={{ position: 'relative', minHeight: 480, marginTop: 0 }}
+        style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', marginTop: 0, overflow: 'visible' }}
       >
         <svg
           width="100%"
@@ -402,40 +741,43 @@ const InstituteOrbitCloud = ({ byHospital }) => {
           ))}
         </svg>
 
-        {hoverInfo && (
-          <div
-            className="institute-hover-tooltip"
-            style={{ left: hoverInfo.x, top: hoverInfo.y, minWidth: 240, padding: '12px 14px' }}
-          >
-            {hoverInfo.hospital.machines.map((m, mi) => (
-              <div
-                key={mi}
-                style={{
-                  marginBottom: mi < hoverInfo.hospital.machines.length - 1 ? 10 : 0,
-                  paddingBottom: mi < hoverInfo.hospital.machines.length - 1 ? 10 : 0,
-                  borderBottom: mi < hoverInfo.hospital.machines.length - 1 ? '1px solid #e5e7eb' : 'none',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
-                  <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>Machine:</span>
-                  <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.machine_name}</span>
+        {hoverInfo && (() => {
+          const { isMobile, positionStyle, sizing } = getInstituteTooltipLayout('orbit');
+          return (
+            <div
+              className="institute-hover-tooltip"
+              style={{
+                ...positionStyle,
+                minWidth: isMobile ? undefined : 240,
+                padding: sizing.padding,
+              }}
+            >
+              {hoverInfo.hospital.machines.map((m, mi) => (
+                <div
+                  key={mi}
+                  style={{
+                    marginBottom: mi < hoverInfo.hospital.machines.length - 1 ? sizing.rowGap : 0,
+                    paddingBottom: mi < hoverInfo.hospital.machines.length - 1 ? sizing.rowGap : 0,
+                    borderBottom: mi < hoverInfo.hospital.machines.length - 1 ? '1px solid #e5e7eb' : 'none',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: isMobile ? 8 : 12, padding: sizing.rowPad }}>
+                    <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: sizing.labelSize, color: '#14868C' }}>Machine:</span>
+                    <span style={{ fontFamily: 'Poppins', fontSize: sizing.valueSize, color: '#6b7280', textAlign: 'right' }}>{m.machine_name}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: isMobile ? 8 : 12, padding: sizing.rowPad }}>
+                    <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: sizing.labelSize, color: '#14868C' }}>Make:</span>
+                    <span style={{ fontFamily: 'Poppins', fontSize: sizing.valueSize, color: '#6b7280', textAlign: 'right' }}>{m.make || '-'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: isMobile ? 8 : 12, padding: sizing.rowPad }}>
+                    <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: sizing.labelSize, color: '#14868C' }}>Technology:</span>
+                    <span style={{ fontFamily: 'Poppins', fontSize: sizing.valueSize, color: '#6b7280', textAlign: 'right' }}>{m.technology || '-'}</span>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
-                  <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>Make:</span>
-                  <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.make || '-'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
-                  <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>Technology:</span>
-                  <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.technology || '-'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
-                  <span style={{ fontFamily: 'Poppins', fontWeight: 600, fontSize: 12.5, color: '#14868C' }}>No. of Machines:</span>
-                  <span style={{ fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280', textAlign: 'right' }}>{m.machine_count ?? 0}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -471,9 +813,15 @@ const MammogramStats = () => {
   const totals = data.totals || {};
   const completionRate = data.completionRate || { viewsUploaded: 0, totalSubjects: 0, rate: 0 };
 
+  const byHospital = mergeDuplicateInstitutes(filterExcludedEntities(data.byHospital));
+  const hospitalTypeBreakdown = (data.hospitalTypeBreakdown || []).map((entry) => ({
+    ...entry,
+    hospitals: filterExcludedEntities(entry.hospitals),
+  }));
+
   return (
     <div style={{ marginTop: 20 }}>
-      <h2 style={{ textAlign: 'center', color: '#34495e', marginBottom: 20 }}>Assessment Records</h2>
+      <h2 style={{ textAlign: 'center', color: '#14868C', marginBottom: 20 }}>Assessment Records</h2>
 
       <div className="summary-section" style={{ marginBottom: '2rem' }}>
         <div className="summary-card">
@@ -491,14 +839,14 @@ const MammogramStats = () => {
         </div>
       </div>
 
-      <div className="charts-grid">
+      <div className="charts-grid" style={{ overflow: 'visible' }}>
         <div className="chart-card full-width">
-          <h3>Machine Modality (CR / DR)</h3>
+          <h3 style={{ color: '#14868C' }}>Machine Modality (CR / DR)</h3>
           <div className="chart-wrapper pie-wrapper">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={(data.hospitalTypeBreakdown || []).map((entry) => ({
+                  data={hospitalTypeBreakdown.map((entry) => ({
                     ...entry,
                     displayName: CR_DR_LABELS[entry.name] || entry.name,
                   }))}
@@ -507,41 +855,78 @@ const MammogramStats = () => {
                   labelLine={false}
                   label={CustomPieLabel}
                 >
-                  {(data.hospitalTypeBreakdown || []).map((entry, i) => (
+                  {hospitalTypeBreakdown.map((entry, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
                   ))}
                 </Pie>
-                {/* CustomTooltip reads row.hospitals to list institutes in this slice on hover */}
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip
+                  content={<CustomTooltip />}
+                  wrapperStyle={{ left: '50%', top: 0, transform: 'translateX(-50%)' }}
+                />
                 <Legend verticalAlign="bottom" height={36} content={<CustomLegend />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
+        <div className="chart-card full-width">
+          <div
+            className="birads-charts-grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '3fr 2fr',
+              gap: '12px',
+              width: '100%',
+              boxSizing: 'border-box',
+            }}
+          >
+            {/* 60% */}
+            <div style={{ width: '100%', minWidth: 0 }}>
+              <BiradsStatsChart
+                title="BIRADS Category"
+                data={data.biradsCategory}
+                categoryKey="category"
+                yMax={300}
+                seriesName="Category"
+                getBarColor={(entry) => getZoneColor(Number(entry.category))}
+              />
+            </div>
 
+            {/* 40% */}
+            <div style={{ width: '100%', minWidth: 0 }}>
+              <BiradsStatsChart
+                title="Breast Density"
+                data={data.biradsDensity}
+                categoryKey="density"
+                yMax={200}
+                seriesName="Density"
+                getBarColor={(entry, idx) => getDensityColor(idx)}
+              />
+            </div>
+          </div>
+        </div>
         <div className="chart-card full-width">
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <h3 style={{ margin: 0 }}>Mammogram Uploads by Institution</h3>
+            <h3 style={{ margin: 0, color: '#14868C' }}>Mammogram Uploads by Institution</h3>
             <div style={{ display: 'flex', gap: 16, fontFamily: 'Poppins', fontSize: 12.5, color: '#6b7280' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: '#6ee7b7', display: 'inline-block' }} />
-                {(data.byHospital || []).reduce((s, h) => s + (h.dicom_count || 0), 0)} DICOM views
+                {byHospital.reduce((s, h) => s + (h.dicom_count || 0), 0)} DICOM views
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: '#fb923c', display: 'inline-block' }} />
-                {(data.byHospital || []).reduce((s, h) => s + (h.report_count || 0), 0)} reports
+                {byHospital.reduce((s, h) => s + (h.report_count || 0), 0)} reports
               </span>
             </div>
           </div>
 
           <div
             className="chart-wrapper hospital-chart-scroll"
-            style={{ height: "550px", '--hospital-count': (data.byHospital || []).length }}
+            style={{ height: "550px", '--hospital-count': byHospital.length }}
           >
             <div className="hospital-chart-inner">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={data.byHospital || []}
+                  data={byHospital}
                   margin={{ top: 24, right: 30, left: 20, bottom: 80 }}
                   barCategoryGap="15%"
                   barGap={2}
@@ -583,10 +968,11 @@ const MammogramStats = () => {
                   <Tooltip
                     content={<CustomTooltip />}
                     cursor={{ fill: '#059669', fillOpacity: 0.06 }}
+                    wrapperStyle={{ left: '50%', top: 0, transform: 'translateX(-50%)' }}
                   />
                   <Legend
                     verticalAlign="bottom"
-                    height={36}
+                    height={10}
                     iconType="circle"
                     wrapperStyle={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 500, color: '#374151' }}
                   />
@@ -597,12 +983,11 @@ const MammogramStats = () => {
                     fill="#6ee7b7"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={80}
+                    minPointSize={3}
                   >
-                    <LabelList
-                      dataKey="dicom_count"
-                      position="top"
-                      style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#059669' }}
-                    />
+                    {byHospital.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.dicom_count === 0 ? '#d1d5db' : '#6ee7b7'} />
+                    ))}
                   </Bar>
 
                   <Bar
@@ -611,24 +996,23 @@ const MammogramStats = () => {
                     fill="#fb923c"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={80}
+                    minPointSize={3}
                   >
-                    <LabelList
-                      dataKey="report_count"
-                      position="top"
-                      style={{ fontFamily: 'Poppins', fontSize: 10.5, fontWeight: 600, fill: '#c2620d' }}
-                    />
+                    {byHospital.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.report_count === 0 ? '#d1d5db' : '#fb923c'} />
+                    ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
         </div>
-        {/* <div className="chart-card full-width">
-          <h3 style={{ marginBottom:12, color: '#14868C', fontWeight: 800,fontSize: '1.4rem' }}>
+        <div className="chart-card full-width" style={{ overflow: 'visible' }}>
+          <h3 style={{ marginBottom: 12, color: '#14868C', fontWeight: 800, fontSize: '1.4rem' }}>
             Machines by Institute
           </h3>
-          <InstituteOrbitCloud byHospital={data.byHospital} />
-        </div> */}
+          <InstituteOrbitCloud byHospital={byHospital} />
+        </div>
       </div>
     </div>
   );
