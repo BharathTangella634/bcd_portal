@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, TIMESTAMP, text, Text, Enum, JSON, Index
+from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, TIMESTAMP, text, Text, Enum, JSON, Index, Date, DateTime
 from sqlalchemy.orm import relationship
 from ..db.session import Base
 import enum
@@ -78,6 +78,53 @@ class EmailTemplateCc(Base):
     id = Column(Integer, primary_key=True, index=True)
     template_key = Column(String(50), ForeignKey("email_templates.template_key", ondelete="CASCADE"), nullable=False)
     cc_email = Column(String(255), nullable=False)
+
+class ReminderEmailLog(Base):
+    __tablename__ = "reminder_email_log"
+    __table_args__ = (
+        Index("uq_reminder_idempotency_key", "idempotency_key", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_type = Column(String(20), nullable=False, default="hospital")
+    hospital_id = Column(String(20), ForeignKey("hospitals.id"), nullable=True, index=True)
+    recipient_email = Column(String(255), nullable=False)
+    idempotency_key = Column(String(500), nullable=False)
+    report_date = Column(Date, nullable=False)
+    quarter_start = Column(Date, nullable=False)
+    quarter_end = Column(Date, nullable=False)
+    data_points = Column(Integer, nullable=False)
+    lifetime_data_points = Column(Integer, nullable=False, default=0)
+    assessments_submitted = Column(Integer, nullable=False)
+    pending_submissions = Column(Integer, nullable=False)
+    quarterly_target = Column(Integer, nullable=False, default=200)
+    missing_questionnaire_sessions = Column(Integer, nullable=False, default=0)
+    missing_consent = Column(Integer, nullable=False, default=0)
+    missing_birads = Column(Integer, nullable=False, default=0)
+    missing_density = Column(Integer, nullable=False, default=0)
+    incomplete_assessments = Column(Integer, nullable=False, default=0)
+    missing_mammogram_views = Column(Integer, nullable=False, default=0)
+    missing_mammogram_reports = Column(Integer, nullable=False, default=0)
+    mammogram_quality_flags = Column(Integer, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default="pending")
+    attempt_count = Column(Integer, nullable=False, default=0)
+    error_message = Column(Text)
+    failure_notified_at = Column(DateTime)
+    failure_notification_error = Column(Text)
+    sent_at = Column(DateTime)
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+
+    hospital = relationship("Hospital")
+
+
+class ReminderConfiguration(Base):
+    __tablename__ = "reminder_configuration"
+
+    id = Column(Integer, primary_key=True)
+    is_paused = Column(Boolean, nullable=False, default=False)
+    is_disabled = Column(Boolean, nullable=False, default=False)
+    updated_by = Column(String(255))
+    updated_at = Column(DateTime)
 
 class Language(Base):
     __tablename__ = "languages"

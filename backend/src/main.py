@@ -3,9 +3,21 @@ import time
 import logging
 from fastapi.middleware.cors import CORSMiddleware
 from .core.config import settings
-from .api import auth, languages, patient, admin, doctor, stats, public, mammogram
+from .api import (
+    auth,
+    languages,
+    patient,
+    admin,
+    doctor,
+    jobs,
+    reminders,
+    stats,
+    public,
+    mammogram,
+)
 
 # Setup logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -42,6 +54,8 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(stats.router, prefix="/api/v1/stats", tags=["stats"])
 app.include_router(public.router, prefix="/api", tags=["public"])
 app.include_router(mammogram.router, prefix="/api/v1/mammogram", tags=["mammogram"])
+app.include_router(jobs.router, prefix="/api/internal/jobs", tags=["internal-jobs"])
+app.include_router(reminders.router, prefix="/api/v1/reminders", tags=["reminders"])
 
 @app.get("/api/health")
 def health_check():
