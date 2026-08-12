@@ -14,6 +14,7 @@ from .api import (
     stats,
     public,
     mammogram,
+    risk_categories,
 )
 
 # Setup logging
@@ -56,6 +57,7 @@ app.include_router(public.router, prefix="/api", tags=["public"])
 app.include_router(mammogram.router, prefix="/api/v1/mammogram", tags=["mammogram"])
 app.include_router(jobs.router, prefix="/api/internal/jobs", tags=["internal-jobs"])
 app.include_router(reminders.router, prefix="/api/v1/reminders", tags=["reminders"])
+app.include_router(risk_categories.router, prefix="/api/v1/risk-categories", tags=["risk-categories"])
 
 @app.get("/api/health")
 def health_check():

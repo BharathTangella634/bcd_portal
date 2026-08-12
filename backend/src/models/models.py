@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, TIMESTAMP, text, Text, Enum, JSON, Index, Date, DateTime
+from sqlalchemy import Column, Float, Integer, String, ForeignKey, Boolean, TIMESTAMP, UniqueConstraint, text, Text, Enum, JSON, Index, Date, DateTime
 from sqlalchemy.orm import relationship
 from ..db.session import Base
 import enum
@@ -246,3 +246,54 @@ class Attachment(Base):
     created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
 
     assessment = relationship("DoctorAssessment", back_populates="attachments")
+
+
+class MRMCStudy(Base):
+    __tablename__ = "mrmc_studies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    hospital_id = Column(String(20), ForeignKey("hospitals.id"), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+
+    hospital = relationship("Hospital")
+    creator = relationship("User")
+    participants = relationship("MRMCStudyParticipant", back_populates="study", cascade="all, delete-orphan")
+
+
+class MRMCStudyParticipant(Base):
+    __tablename__ = "mrmc_study_participants"
+    __table_args__ = (
+        UniqueConstraint("study_id", "user_id", name="uq_study_user"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    study_id = Column(Integer, ForeignKey("mrmc_studies.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    is_reader = Column(Boolean, nullable=False, default=False)
+    is_arbiter = Column(Boolean, nullable=False, default=False)
+    assigned_count = Column(Integer, nullable=False, default=0)
+    submitted_count = Column(Integer, nullable=False, default=0)
+    kappa_score = Column(Float, nullable=True)
+
+    study = relationship("MRMCStudy", back_populates="participants")
+    user = relationship("User")
+
+class MRMCStudySubject(Base):
+    __tablename__ = "mrmc_study_subjects"
+    __table_args__ = (
+        UniqueConstraint("study_id", "patient_session_id", name="uq_study_subject"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    study_id = Column(Integer, ForeignKey("mrmc_studies.id", ondelete="CASCADE"), nullable=False)
+    patient_session_id = Column(String(20), ForeignKey("patient_sessions.id"), nullable=False)
+    is_included = Column(Boolean, nullable=False, default=True)
+    reader_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    arbiter_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+
+    study = relationship("MRMCStudy")
+    session = relationship("PatientSession")
+    reader = relationship("User", foreign_keys=[reader_user_id])
+    arbiter = relationship("User", foreign_keys=[arbiter_user_id])
