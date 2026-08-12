@@ -9,6 +9,8 @@ const DoctorPage = ({ isEmbedded = false }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
+  const [selectedSessionReadOnly, setSelectedSessionReadOnly] = useState(true);
+  const [selectedSessionHospital, setSelectedSessionHospital] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [sortStack, setSortStack] = useState([{ key: 'date', dir: 'desc' }]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,6 +22,9 @@ const DoctorPage = ({ isEmbedded = false }) => {
   const [hospitalSessionsLoading, setHospitalSessionsLoading] = useState({});
   const PAGE_SIZE = 20;
   const isSuperViewer = localStorage.getItem('isSuperViewer') === 'true';
+  const loggedInRole = localStorage.getItem('role')?.toLowerCase() || '';
+  const loggedInHospital = localStorage.getItem('hospitalName') || '';
+  const canBrowseAllHospitals = isSuperViewer || (!isEmbedded && ['clinician', 'doctor'].includes(loggedInRole));
 
   const toggleInstitution = (name) => {
     setExpandedInstitutions(prev => {
@@ -57,7 +62,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
         return;
       }
     }
-    if (isSuperViewer) {
+    if (canBrowseAllHospitals) {
       fetchHospitalSummary();
     } else {
       fetchSessions();
@@ -148,8 +153,9 @@ const DoctorPage = ({ isEmbedded = false }) => {
     }
   };
 
-  const fetchSessionDetail = async (sessionId) => {
+  const fetchSessionDetail = async (session, readOnly = true) => {
     try {
+      const sessionId = session.id;
       const token = localStorage.getItem('token');
       if (!token) {
         alert('Authentication token missing. Please log in again.');
@@ -165,6 +171,8 @@ const DoctorPage = ({ isEmbedded = false }) => {
       if (response.ok) {
         const data = await response.json();
         setSelectedSession(data);
+        setSelectedSessionReadOnly(readOnly);
+        setSelectedSessionHospital(session.hospital_name || loggedInHospital);
         setIsModalOpen(true);
       } else {
         const contentType = response.headers.get("content-type");
@@ -298,12 +306,18 @@ const DoctorPage = ({ isEmbedded = false }) => {
                 {session.has_additional_docs ? 'Yes' : 'No'}
               </td>
               <td style={{ ...tdStyle, textAlign: 'center' }}>
+                {(() => {
+                  const canEditAssessment = (isEmbedded || session.hospital_name === loggedInHospital)
+                    && session.has_assessment;
+                  return (
                 <button
-                  onClick={() => fetchSessionDetail(session.id)}
+                  onClick={() => fetchSessionDetail(session, !canEditAssessment)}
                   style={linkButtonStyle}
                 >
-                  {!isSuperViewer && session.has_assessment ? 'Edit Assessment' : 'View Responses'}
+                  {canEditAssessment ? 'Edit Assessment' : 'View Responses'}
                 </button>
+                  );
+                })()}
               </td>
             </tr>
           ))}
@@ -422,12 +436,12 @@ const DoctorPage = ({ isEmbedded = false }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <h2 style={{ color: '#333', margin: 0 }}>Subject List</h2>
-          {!isSuperViewer && sortStack.map((s, i) => (
+          {!canBrowseAllHospitals && sortStack.map((s, i) => (
             <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, backgroundColor: '#e8f7f8', color: '#14868C', fontWeight: 600 }}>
               {s.key}{s.dir === 'asc' ? '↑' : '↓'}
             </span>
           ))}
-          {!isSuperViewer && sortStack.length > 1 && (
+          {!canBrowseAllHospitals && sortStack.length > 1 && (
             <button onClick={clearSort} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, border: '1px solid #ccc', background: '#fff', cursor: 'pointer', color: '#666' }}>
               Clear
             </button>
@@ -436,7 +450,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             type="text"
-            placeholder={isSuperViewer ? 'Search by Subject ID or Institution...' : 'Search by Subject ID...'}
+            placeholder={canBrowseAllHospitals ? 'Search by Institution...' : 'Search by Subject ID...'}
             value={searchTerm}
             onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
             style={{ width: 260, padding: '8px 14px', borderRadius: 8, border: '1.5px solid #c8e0e2', fontSize: 13, outline: 'none', fontFamily: 'inherit' }}
@@ -447,10 +461,10 @@ const DoctorPage = ({ isEmbedded = false }) => {
       {loading && <p>Loading...</p>}
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
-      {!loading && !error && isSuperViewer && renderHospitalSummary()}
+      {!loading && !error && canBrowseAllHospitals && renderHospitalSummary()}
 
       {(() => {
-        if (isSuperViewer) return null;
+        if (canBrowseAllHospitals) return null;
 
         const filtered = sessions.filter(s => {
           if (!searchTerm) return true;
@@ -509,7 +523,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
                 </tbody>
               </table>
               
-              {isSuperViewer ? (
+              {selectedSessionReadOnly ? (
                 selectedSession.assessment ? (
                   <DoctorAssessmentForm
                     sessionId={selectedSession.id}
@@ -560,7 +574,11 @@ const DoctorPage = ({ isEmbedded = false }) => {
                     return ((1 / (1 + Math.exp(-lp))) * 100).toFixed(2);
                   })()}
                   onSaveSuccess={() => {
-                    fetchSessions();
+                    if (canBrowseAllHospitals && selectedSessionHospital) {
+                      fetchHospitalSessions(selectedSessionHospital);
+                    } else {
+                      fetchSessions();
+                    }
                     setTimeout(() => setIsModalOpen(false), 2000);
                   }}
                 />

@@ -7,6 +7,7 @@ from ..db.session import get_db, get_questionnaire_db
 from ..models.models import DoctorAssessment, Attachment, Hospital
 from ..schemas.schemas import PatientSessionListItem, PatientSessionDetail
 from .auth import get_current_user
+from ..services.session_access import INSTITUTE_QUESTIONS, session_belongs_to_hospital
 from typing import Dict, List
 
 router = APIRouter()
@@ -17,17 +18,10 @@ if _qpath.exists():
     with open(_qpath, encoding="utf-8") as _f:
         _Q_TEXT_MAP = {k: v.get("question", k) for k, v in json.load(_f).get("questions", {}).items()}
 
-INSTITUTE_QUESTIONS = (
-    "Institute Name",
-    "Institute Name:",
-    "Enter the Hospital ID(If any, else leave):",
-    "Q45",
-)
-
-
 def _get_hospital_name(app_db, hospital_id):
-    hospital = app_db.query(Hospital).filter(Hospital.id == hospital_id).first()
-    return hospital.name if hospital else None
+    return app_db.query(Hospital.name).filter(
+        Hospital.id == hospital_id
+    ).scalar()
 
 
 def _get_attachment_flags(assessment):
@@ -63,11 +57,12 @@ def get_hospital_summary(
 ):
     is_super_viewer = current_user.get("is_super_viewer", False) or \
         current_user.get("email", "").lower().endswith("@tanuh.ai")
-    if not is_super_viewer:
+    role = (current_user.get("role") or "").lower()
+    if not is_super_viewer and role not in ("clinician", "doctor"):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    hospitals = app_db.query(Hospital).filter(
-        ~Hospital.name.in_(('Test', 'Tanuh Foundation'))
+    hospitals = app_db.query(
+        Hospital.name, Hospital.short_name, Hospital.state
     ).order_by(Hospital.name).all()
     if not hospitals:
         return []
@@ -160,17 +155,17 @@ def get_patient_sessions(
 ):
     is_super_viewer = current_user.get("is_super_viewer", False) or \
         current_user.get("email", "").lower().endswith("@tanuh.ai")
+    role = (current_user.get("role") or "").lower()
+    can_view_all_hospitals = is_super_viewer or role in ("clinician", "doctor")
     order_clause = _build_order_clause(sort)
 
-    if is_super_viewer:
+    if can_view_all_hospitals:
         if hospital_name:
             valid_names = [hospital_name]
         else:
             valid_names = [
                 h.name for h in
-                app_db.query(Hospital.name).filter(
-                    ~Hospital.name.in_(('Test', 'Tanuh Foundation'))
-                ).all()
+                app_db.query(Hospital.name).all()
             ]
         if not valid_names:
             return []
@@ -224,9 +219,16 @@ def get_patient_sessions(
     result = []
     for row in rows:
         session_id = row[0]
-        assessment = app_db.query(DoctorAssessment).filter(
+        assessment_query = app_db.query(DoctorAssessment).filter(
             DoctorAssessment.patient_session_id == session_id
-        ).options(joinedload(DoctorAssessment.attachments)).first()
+        )
+        if not can_view_all_hospitals:
+            assessment_query = assessment_query.filter(
+                DoctorAssessment.hospital_id == current_user.get("hospital_id")
+            )
+        assessment = assessment_query.options(
+            joinedload(DoctorAssessment.attachments)
+        ).first()
 
         flags = _get_attachment_flags(assessment)
         result.append({
@@ -292,9 +294,12 @@ def get_patient_session_detail(
             "created_at": r[3],
         })
 
-    assessment = app_db.query(DoctorAssessment).filter(
+    assessment_query = app_db.query(DoctorAssessment).filter(
         DoctorAssessment.patient_session_id == session_id
-    ).options(joinedload(DoctorAssessment.attachments)).first()
+    )
+    assessment = assessment_query.options(
+        joinedload(DoctorAssessment.attachments)
+    ).first()
 
     flags = _get_attachment_flags(assessment)
 
