@@ -230,6 +230,8 @@ def get_hospital_type_breakdown(db: Session) -> list:
         Hospital.short_name,
         Hospital.state,
         Hospital.type,
+    ).filter(
+        ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES))
     ).all()
 
     groups = {'cr': [], 'dr': [], 'unassigned': []}
@@ -272,13 +274,11 @@ def get_total_views_uploaded_count(db: Session) -> int:
     ).scalar() or 0
 
 
-def get_completion_rate(db: Session, questionnaire_db: Session) -> dict:
-    views_uploaded = get_total_views_uploaded_count(db)
-    total_subjects = get_total_subjects_count(db, questionnaire_db)
-    rate = round((views_uploaded / total_subjects) * 100, 2) if total_subjects else 0.0
+def get_completion_rate(total_subjects: int, reports_count: int) -> dict:
+    rate = round((reports_count / total_subjects) * 100, 2) if total_subjects else 0.0
 
     return {
-        "viewsUploaded": views_uploaded,
+        "reportsUploaded": reports_count,
         "totalSubjects": total_subjects,
         "rate": rate,
     }
@@ -352,7 +352,7 @@ def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> di
     totals = get_total_mammogram_stats(db, questionnaire_db)
     by_hospital = get_mammogram_by_hospital(db)
     hospital_type_breakdown = get_hospital_type_breakdown(db)
-    reports_by_hospital = get_reports_by_hospital(db)   # <-- now GCS-based
+    reports_by_hospital = get_reports_by_hospital(db)
     birads_stats = get_birads_by_institute_and_side(db)
 
     return {
@@ -370,10 +370,10 @@ def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> di
             {"name": "Report Uploaded", "value": report_uploaded},
             {"name": "No Report", "value": report_missing},
         ],
-        "completionRate": get_completion_rate(db, questionnaire_db),
+        "completionRate": get_completion_rate(totals["imaging_studies"], totals["reports"]),
         "byHospital": by_hospital,
         "hospitalTypeBreakdown": hospital_type_breakdown,
-        "reportsByHospital": reports_by_hospital,   # <-- now GCS-based
+        "reportsByHospital": reports_by_hospital,
         "biradsCategory": birads_stats["biradsCategory"],
         "biradsDensity": birads_stats["biradsDensity"],
     }
