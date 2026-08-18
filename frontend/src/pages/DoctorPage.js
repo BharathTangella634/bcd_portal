@@ -722,7 +722,7 @@ const modalOverlayStyle = {
 const modalContentStyle = {
   backgroundColor: '#fff',
   width: '80%',
-  maxWidth: '80vw',
+  maxWidth: '90vw',
   maxHeight: '80vh',
   borderRadius: '8px',
   display: 'flex',
