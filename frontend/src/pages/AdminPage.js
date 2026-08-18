@@ -44,7 +44,7 @@ const AdminPage = () => {
   const tabs = [
     { id: 'patient', label: 'Subject View' },
     { id: 'doctor', label: 'Clinician View' },
-    { id: 'mrmc', label: 'MRMC Study' },
+    // { id: 'mrmc', label: 'MRMC Study' },
     { id: 'admin', label: 'Admin' },
   ];
 

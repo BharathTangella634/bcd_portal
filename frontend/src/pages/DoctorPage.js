@@ -252,10 +252,12 @@ const DoctorPage = ({ isEmbedded = false }) => {
             <th style={sortableThStyle} onClick={() => handleSort('date')}>Date{sortArrow('date')}</th>
             <th style={thCenterStyle}>Risk</th>
             <th style={sortableThStyle} onClick={() => handleSort('assessment')}>Assessment{sortArrow('assessment')}</th>
-            <th style={thCenterStyle}>Mammography</th>
+            {/* <th style={thCenterStyle}>Mammography</th>
             <th style={thCenterStyle}>Mammography Report</th>
             <th style={thCenterStyle}>Breast Ultrasound (USG Breast)</th>
-            <th style={thCenterStyle}>Breast Ultrasound (USG Breast) Report</th>
+            <th style={thCenterStyle}>Breast Ultrasound (USG Breast) Report</th> */}
+            <th style={thCenterStyle}>Mammography + Report</th>
+            <th style={thCenterStyle}>Breast Ultrasound + Report</th>
             <th style={thCenterStyle}>Biopsy</th>
             <th style={thCenterStyle}>Annotations</th>
             <th style={thCenterStyle}>Additional Docs</th>
@@ -284,7 +286,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
               <td style={statusCellStyle(session.has_assessment)}>
                 {session.has_assessment ? 'Yes' : 'No'}
               </td>
-              <td style={statusCellStyle(session.has_mammo_dicom)}>
+              {/* <td style={statusCellStyle(session.has_mammo_dicom)}>
                 {session.has_mammo_dicom ? 'Yes' : 'No'}
               </td>
               <td style={smrCellStyle(session.has_mammo_reading)}>
@@ -295,6 +297,37 @@ const DoctorPage = ({ isEmbedded = false }) => {
               </td>
               <td style={smrCellStyle(session.has_us_reading)}>
                 {session.has_us_reading === 'SMR' ? 'Yes (SMR)' : session.has_us_reading === 'Yes' ? 'Yes' : 'No'}
+              </td> */}
+              <td style={{ ...tdStyle, textAlign: 'center' }}>
+                {(() => {
+                  const isSMR = session.has_mammo_reading === 'SMR';
+                  const isYes = session.has_mammo_dicom && (session.has_mammo_reading === 'Yes' || isSMR);
+                  return (
+                    <span style={{
+                      color: isSMR ? '#0d6efd' : isYes ? 'green' : 'red',
+                      fontWeight: 'bold',
+                      fontSize: isSMR ? 12 : 'inherit',
+                    }}>
+                      {isSMR ? 'Yes (SMR)' : isYes ? 'Yes' : 'No'}
+                    </span>
+                  );
+                })()}
+              </td>
+              <td style={{ ...tdStyle, textAlign: 'center' }}>
+                {(() => {
+                  const isSMR = session.has_us_reading === 'SMR';
+                  const isYes = (session.has_us_video === 'Yes' || session.has_us_video === 'SMR')
+                    && (session.has_us_reading === 'Yes' || isSMR);
+                  return (
+                    <span style={{
+                      color: isSMR ? '#0d6efd' : isYes ? 'green' : 'red',
+                      fontWeight: 'bold',
+                      fontSize: isSMR ? 12 : 'inherit',
+                    }}>
+                      {isSMR ? 'Yes (SMR)' : isYes ? 'Yes' : 'No'}
+                    </span>
+                  );
+                })()}
               </td>
               <td style={statusCellStyle(session.has_biopsy)}>
                 {session.has_biopsy ? 'Yes' : 'No'}
@@ -310,12 +343,12 @@ const DoctorPage = ({ isEmbedded = false }) => {
                   const canEditAssessment = (isEmbedded || session.hospital_name === loggedInHospital)
                     && session.has_assessment;
                   return (
-                <button
-                  onClick={() => fetchSessionDetail(session, !canEditAssessment)}
-                  style={linkButtonStyle}
-                >
-                  {canEditAssessment ? 'Edit Assessment' : 'View Responses'}
-                </button>
+                    <button
+                      onClick={() => fetchSessionDetail(session, !canEditAssessment)}
+                      style={linkButtonStyle}
+                    >
+                      {canEditAssessment ? 'Edit Assessment' : 'View Responses'}
+                    </button>
                   );
                 })()}
               </td>
@@ -348,11 +381,11 @@ const DoctorPage = ({ isEmbedded = false }) => {
           }, [])
           .map((p, i) =>
             p === '...' ? <span key={`dot-${i}`} style={{ color: '#999', fontSize: 13 }}>...</span> :
-            <button
-              key={p}
-              onClick={() => onPageChange(p)}
-              style={{ ...paginationBtnStyle, background: curPage === p ? '#14868C' : '#fff', color: curPage === p ? '#fff' : '#14868C', borderColor: curPage === p ? '#14868C' : '#c8e0e2' }}
-            >{p}</button>
+              <button
+                key={p}
+                onClick={() => onPageChange(p)}
+                style={{ ...paginationBtnStyle, background: curPage === p ? '#14868C' : '#fff', color: curPage === p ? '#fff' : '#14868C', borderColor: curPage === p ? '#14868C' : '#c8e0e2' }}
+              >{p}</button>
           )}
         <button
           onClick={() => onPageChange(Math.min(totalPages, curPage + 1))}
@@ -522,7 +555,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
                   )}
                 </tbody>
               </table>
-              
+
               {selectedSessionReadOnly ? (
                 selectedSession.assessment ? (
                   <DoctorAssessmentForm
@@ -543,7 +576,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
                       const a25 = (r['Q16'] === '25 to 29') ? 1 : 0;
                       const a30 = (r['Q16'] === 'After 30') ? 1 : 0;
                       const ab = (nul || a25) ? 1 : 0;
-                      const lp = -0.940 + 0.027*age - 0.082*aam + 0.453*irr - 0.892*bf + 0.810*fh + 1.420*bx + 0.811*ab + 1.035*a30;
+                      const lp = -0.940 + 0.027 * age - 0.082 * aam + 0.453 * irr - 0.892 * bf + 0.810 * fh + 1.420 * bx + 0.811 * ab + 1.035 * a30;
                       return ((1 / (1 + Math.exp(-lp))) * 100).toFixed(2);
                     })()}
                   />
@@ -570,7 +603,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
                     const a25 = (r['Q16'] === '25 to 29') ? 1 : 0;
                     const a30 = (r['Q16'] === 'After 30') ? 1 : 0;
                     const ab = (nul || a25) ? 1 : 0;
-                    const lp = -0.940 + 0.027*age - 0.082*aam + 0.453*irr - 0.892*bf + 0.810*fh + 1.420*bx + 0.811*ab + 1.035*a30;
+                    const lp = -0.940 + 0.027 * age - 0.082 * aam + 0.453 * irr - 0.892 * bf + 0.810 * fh + 1.420 * bx + 0.811 * ab + 1.035 * a30;
                     return ((1 / (1 + Math.exp(-lp))) * 100).toFixed(2);
                   })()}
                   onSaveSuccess={() => {
@@ -595,9 +628,9 @@ const DoctorPage = ({ isEmbedded = false }) => {
   }
 
   return (
-    <Layout 
-      userRole="clinician" 
-      handleLogout={handleLogout} 
+    <Layout
+      userRole="clinician"
+      handleLogout={handleLogout}
       fullWidth={true}
     >
       {content}
