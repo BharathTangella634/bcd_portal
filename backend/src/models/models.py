@@ -297,3 +297,137 @@ class MRMCStudySubject(Base):
     session = relationship("PatientSession")
     reader = relationship("User", foreign_keys=[reader_user_id])
     arbiter = relationship("User", foreign_keys=[arbiter_user_id])
+
+class RiskCategoryVersionControl(Base):
+    __tablename__ = "risk_categories_version_control"
+    __table_args__ = {"schema": "ai_features"}
+
+    id = Column(Integer, primary_key=True, index=True)
+    version_number = Column(Integer, nullable=False, unique=True)
+    is_active = Column(Boolean, nullable=False, default=False)
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+
+    categories = relationship(
+        "RiskCategory",
+        back_populates="version",
+        order_by="RiskCategory.display_order",
+        primaryjoin="RiskCategoryVersionControl.version_number==RiskCategory.version_number",
+        foreign_keys="[RiskCategory.version_number]",
+    )
+
+class RiskCategory(Base):
+    __tablename__ = "risk_categories"
+    __table_args__ = (
+        UniqueConstraint("risk_category", "version_number", name="uq_risk_category_version"),
+        {"schema": "ai_features"},
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    risk_category = Column(String(100), nullable=False)
+    lifetime_risk_percentage = Column(String(20), nullable=False)
+    description = Column(Text, nullable=True)
+    recommendation = Column(Text, nullable=True)
+    version_number = Column(
+        Integer,
+        ForeignKey("ai_features.risk_categories_version_control.version_number"),
+        nullable=False,
+    )
+    display_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+
+    version = relationship(
+        "RiskCategoryVersionControl",
+        back_populates="categories",
+        primaryjoin="RiskCategory.version_number==RiskCategoryVersionControl.version_number",
+        foreign_keys=[version_number],
+    )
+class ModelWeightsVersionControl(Base):
+    __tablename__ = "model_weights_version_control"
+    __table_args__ = {"schema": "ai_features"}
+
+    id = Column(Integer, primary_key=True, index=True)
+    version_number = Column(Integer, nullable=False, unique=True)
+    is_active = Column(Boolean, nullable=False, default=False)
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+
+    weights = relationship(
+        "ModelWeights",
+        back_populates="version",
+        primaryjoin="ModelWeightsVersionControl.version_number==ModelWeights.version_number",
+        foreign_keys="[ModelWeights.version_number]",
+        order_by="ModelWeights.id",
+    )
+
+
+class ModelWeights(Base):
+    __tablename__ = "model_weights"
+    __table_args__ = (
+        UniqueConstraint("feature_name", "version_number", name="uq_feature_version"),
+        {"schema": "ai_features"},
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    feature_name = Column(String(150), nullable=False)
+    weight_value = Column(Float, nullable=False)
+    version_number = Column(
+        Integer,
+        ForeignKey("ai_features.model_weights_version_control.version_number"),
+        nullable=False,
+    )
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+
+    version = relationship(
+        "ModelWeightsVersionControl",
+        back_populates="weights",
+        primaryjoin="ModelWeights.version_number==ModelWeightsVersionControl.version_number",
+        foreign_keys=[version_number],
+    )
+
+class RiskThresholdsVersionControl(Base):
+    __tablename__ = "risk_thresholds_version_control"
+    __table_args__ = {"schema": "ai_features"}
+
+    id = Column(Integer, primary_key=True, index=True)
+    version_number = Column(Integer, nullable=False, unique=True)
+    is_active = Column(Boolean, nullable=False, default=False)
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+
+    thresholds = relationship(
+        "RiskThresholds",
+        back_populates="version",
+        primaryjoin="RiskThresholdsVersionControl.version_number==RiskThresholds.version_number",
+        foreign_keys="[RiskThresholds.version_number]",
+        order_by="RiskThresholds.id",
+    )
+
+
+class RiskThresholds(Base):
+    __tablename__ = "risk_thresholds"
+    __table_args__ = (
+        UniqueConstraint("risk_category", "version_number", name="uq_threshold_category_version"),
+        {"schema": "ai_features"},
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    risk_category = Column(String(100), nullable=False)
+    min_percentage = Column(Float, nullable=True)
+    max_percentage = Column(Float, nullable=True)
+    version_number = Column(
+        Integer,
+        ForeignKey("ai_features.risk_thresholds_version_control.version_number"),
+        nullable=False,
+    )
+    created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+
+    version = relationship(
+        "RiskThresholdsVersionControl",
+        back_populates="thresholds",
+        primaryjoin="RiskThresholds.version_number==RiskThresholdsVersionControl.version_number",
+        foreign_keys=[version_number],
+    )
