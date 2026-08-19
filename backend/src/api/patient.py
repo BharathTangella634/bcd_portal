@@ -5,7 +5,6 @@ from ..models.models import PatientSession, Question, QuestionTranslation, Quest
 from ..schemas.schemas import QuestionResponse, QuestionOptionResponse, QuestionnaireSubmission, PatientSessionListItem, PatientSessionDetail, DoctorAssessmentCreate, DoctorAssessmentResponse
 from ..core.config import settings
 from .auth import get_current_user
-from ..services.session_access import session_belongs_to_hospital
 from google.cloud import storage
 from google.auth import default as auth_default, impersonated_credentials
 from typing import List, Optional
@@ -97,19 +96,11 @@ def generate_upload_url(
     file_type: str = Form(...),
     file_name: str = Form(...),
     session_id: str = Form(...),
-    db: Session = Depends(get_db),
-    q_db: Session = Depends(get_questionnaire_db),
     current_user: dict = Depends(get_current_user)
 ):
     hospital_id = current_user.get("hospital_id")
     if not hospital_id:
         raise HTTPException(status_code=400, detail="User hospital ID not found")
-
-    if not session_belongs_to_hospital(db, q_db, session_id, hospital_id):
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to upload files for another hospital's session",
-        )
 
     if not settings.GCP_STORAGE_BUCKET:
         raise HTTPException(status_code=500, detail="GCP_STORAGE_BUCKET not configured")
@@ -160,10 +151,7 @@ def get_view_url(
     is_super_viewer = current_user.get("is_super_viewer", False) or \
         current_user.get("email", "").lower().endswith("@tanuh.ai")
 
-    role = (current_user.get("role") or "").lower()
-    can_view_all_hospitals = is_super_viewer or role in ("clinician", "doctor")
-
-    if can_view_all_hospitals:
+    if is_super_viewer:
         assessment = db.query(DoctorAssessment).filter(
             DoctorAssessment.id == attachment.assessment_id
         ).first()
@@ -235,10 +223,7 @@ def view_file(
     is_super_viewer = current_user.get("is_super_viewer", False) or \
         current_user.get("email", "").lower().endswith("@tanuh.ai")
 
-    role = (current_user.get("role") or "").lower()
-    can_view_all_hospitals = is_super_viewer or role in ("clinician", "doctor")
-
-    if can_view_all_hospitals:
+    if is_super_viewer:
         assessment = db.query(DoctorAssessment).filter(
             DoctorAssessment.id == attachment.assessment_id
         ).first()
@@ -312,30 +297,14 @@ def record_upload(
     gcs_url: str = Form(...),
     mime_type: str = Form(None),
     db: Session = Depends(get_db),
-    q_db: Session = Depends(get_questionnaire_db),
     current_user: dict = Depends(get_current_user)
 ):
     hospital_id = current_user.get("hospital_id")
     doctor_id = current_user.get("id")
 
-    if not hospital_id or not doctor_id:
-        raise HTTPException(status_code=400, detail="User hospital ID or doctor ID not found")
-
-    if not session_belongs_to_hospital(db, q_db, session_id, hospital_id):
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to upload files for another hospital's session",
-        )
-
     assessment = db.query(DoctorAssessment).filter(
         DoctorAssessment.patient_session_id == session_id
     ).first()
-
-    if assessment and assessment.hospital_id != hospital_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to edit another hospital's assessment",
-        )
 
     if not assessment:
         assessment = DoctorAssessment(
@@ -584,37 +553,17 @@ async def create_doctor_assessment(
             "SELECT session_id FROM session_table WHERE session_id = :sid"
         ), {"sid": patient_session_id}).fetchone()
 
-        app_session = db.query(PatientSession).filter(
-            PatientSession.id == patient_session_id
-        ).first()
-
-        if not session_row and not app_session:
+        if not session_row:
             raise HTTPException(status_code=404, detail="Patient session not found")
-
-        is_super_viewer = current_user.get("is_super_viewer", False) or \
-            current_user.get("email", "").lower().endswith("@tanuh.ai")
-        is_admin = (user_role or "").lower() == 'admin'
-        if is_super_viewer and not is_admin:
-            raise HTTPException(status_code=403, detail="Super viewers have read-only access")
-
-        if not is_admin and not session_belongs_to_hospital(
-            db, q_db, patient_session_id, hospital_id
-        ):
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to edit another hospital's assessment",
-            )
 
         assessment = db.query(DoctorAssessment).filter(
             DoctorAssessment.patient_session_id == patient_session_id
         ).first()
 
         if assessment:
-            if assessment.hospital_id != hospital_id and not is_admin:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Not authorized to edit another hospital's assessment",
-                )
+            is_admin = user_role.lower() == 'admin'
+            if assessment.doctor_id != doctor_id and not is_admin:
+                raise HTTPException(status_code=403, detail="Not authorized to edit this assessment")
 
             assessment.questionnaire_feedback = questionnaire_feedback
             assessment.is_questionnaire_correct = is_questionnaire_correct
