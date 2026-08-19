@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import DoctorAssessmentForm from '../components/DoctorAssessmentForm';
 
-const DoctorPage = ({ isEmbedded = false }) => {
+const MRMCTableDetails = ({ isEmbedded = false }) => {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +18,8 @@ const DoctorPage = ({ isEmbedded = false }) => {
   const [hospitalSummary, setHospitalSummary] = useState([]);
   const [hospitalSessions, setHospitalSessions] = useState({});
   const [hospitalSessionsLoading, setHospitalSessionsLoading] = useState({});
+  const [participants, setParticipants] = useState([]);
+  const [participantsLoading, setParticipantsLoading] = useState(false);
   const PAGE_SIZE = 20;
   const isSuperViewer = localStorage.getItem('isSuperViewer') === 'true';
 
@@ -234,114 +236,106 @@ const DoctorPage = ({ isEmbedded = false }) => {
     return ` ${arrow}${sortStack.length > 1 ? pos : ''}`;
   };
 
+  const AgreementInfoPopover = () => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+      const handleClickOutside = (e) => {
+        if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const iconStyle = { cursor: 'pointer', color: '#14868C', marginLeft: '4px' };
+
+    const popoverStyle = {
+      position: 'absolute',
+      top: 'calc(100% + 8px)',
+      right: 0,
+      width: '320px',
+      backgroundColor: '#EAF2FB',
+      border: '1px solid #CFE0F5',
+      borderRadius: '8px',
+      padding: '16px 18px',
+      boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
+      zIndex: 20,
+      fontWeight: 'normal',
+      textAlign: 'left'
+    };
+
+    return (
+      <span ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+        <span style={iconStyle} onClick={() => setOpen(!open)}>ⓘ</span>
+        {open && (
+          <div style={popoverStyle}>
+            <p style={{ fontWeight: 'bold', color: '#1d4e89', marginBottom: '8px' }}>What is Agreement?</p>
+            <p style={{ marginBottom: '8px', color: '#333', fontSize: '13px' }}>
+              Agreement (kappa score) measures how much the reader's assessments agree with the consensus (or arbiter) beyond chance. It ranges from -1 to 1, where:
+            </p>
+            <ul style={{ margin: '0 0 8px 18px', color: '#333', fontSize: '13px' }}>
+              <li>1 = Perfect agreement</li>
+              <li>0 = Agreement equivalent to chance</li>
+              <li>&lt; 0 = Less agreement than chance</li>
+            </ul>
+            <p style={{ color: '#333', fontSize: '13px' }}>Higher values indicate better consistency and reliability of the reader.</p>
+          </div>
+        )}
+      </span>
+    );
+  };
+
   const renderSessionTable = (sessionList, showHospitalCol) => (
     <div style={tableContainerStyle}>
-      <table style={tableStyle}>
-        <thead>
-          <tr style={headerRowStyle}>
-            <th style={thCenterStyle}>Subject ID</th>
-            {showHospitalCol && <th style={thCenterStyle}>Hospital</th>}
-            <th style={sortableThStyle} onClick={() => handleSort('date')}>Date{sortArrow('date')}</th>
-            <th style={thCenterStyle}>Risk</th>
-            <th style={sortableThStyle} onClick={() => handleSort('assessment')}>Assessment{sortArrow('assessment')}</th>
-            {/* <th style={thCenterStyle}>Mammography</th>
-            <th style={thCenterStyle}>Mammography Report</th>
-            <th style={thCenterStyle}>Breast Ultrasound (USG Breast)</th>
-            <th style={thCenterStyle}>Breast Ultrasound (USG Breast) Report</th> */}
-             <th style={thCenterStyle}>Mammography + Report</th>
-            <th style={thCenterStyle}>Breast Ultrasound + Report</th>
-            <th style={thCenterStyle}>Biopsy</th>
-            <th style={thCenterStyle}>Annotations</th>
-            <th style={thCenterStyle}>Additional Docs</th>
-            <th style={thCenterStyle}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sessionList.map((session) => (
-            <tr key={session.id} style={rowStyle}>
-              <td style={{ ...tdStyle, textAlign: 'center' }}>{session.patient_id || session.id?.substring(0, 8)}</td>
-              {showHospitalCol && <td style={{ ...tdStyle, textAlign: 'center', fontSize: 12 }}>{session.hospital_name || '-'}</td>}
-              <td style={{ ...tdStyle, textAlign: 'center', fontSize: 12 }}>{session.consent_timestamp ? new Date(session.consent_timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}</td>
-              <td style={{ ...tdStyle, textAlign: 'center' }}>
-                {session.risk_category ? (
-                  <span style={{
-                    display: 'inline-block',
-                    padding: '4px 12px',
-                    borderRadius: 12,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    backgroundColor: RISK_COLORS[session.risk_category] || '#eee',
-                    color: '#111',
-                  }}>{session.risk_category.replace(' Risk', '')}</span>
-                ) : '-'}
-              </td>
-              <td style={statusCellStyle(session.has_assessment)}>
-                {session.has_assessment ? 'Yes' : 'No'}
-              </td>
-              {/* <td style={statusCellStyle(session.has_mammo_dicom)}>
-                {session.has_mammo_dicom ? 'Yes' : 'No'}
-              </td>
-              <td style={smrCellStyle(session.has_mammo_reading)}>
-                {session.has_mammo_reading === 'SMR' ? 'Yes (SMR)' : session.has_mammo_reading === 'Yes' ? 'Yes' : 'No'}
-              </td>
-              <td style={smrCellStyle(session.has_us_video)}>
-                {session.has_us_video === 'SMR' ? 'Yes (SMR)' : session.has_us_video === 'Yes' ? 'Yes' : 'No'}
-              </td>
-              <td style={smrCellStyle(session.has_us_reading)}>
-                {session.has_us_reading === 'SMR' ? 'Yes (SMR)' : session.has_us_reading === 'Yes' ? 'Yes' : 'No'}
-              </td> */}
-              <td style={{ ...tdStyle, textAlign: 'center' }}>
-                {(() => {
-                  const isSMR = session.has_mammo_reading === 'SMR';
-                  const isYes = session.has_mammo_dicom && (session.has_mammo_reading === 'Yes' || isSMR);
-                  return (
-                    <span style={{
-                      color: isSMR ? '#0d6efd' : isYes ? 'green' : 'red',
-                      fontWeight: 'bold',
-                      fontSize: isSMR ? 12 : 'inherit',
-                    }}>
-                      {isSMR ? 'Yes (SMR)' : isYes ? 'Yes' : 'No'}
-                    </span>
-                  );
-                })()}
-              </td>
-              <td style={{ ...tdStyle, textAlign: 'center' }}>
-                {(() => {
-                  const isSMR = session.has_us_reading === 'SMR';
-                  const isYes = (session.has_us_video === 'Yes' || session.has_us_video === 'SMR')
-                    && (session.has_us_reading === 'Yes' || isSMR);
-                  return (
-                    <span style={{
-                      color: isSMR ? '#0d6efd' : isYes ? 'green' : 'red',
-                      fontWeight: 'bold',
-                      fontSize: isSMR ? 12 : 'inherit',
-                    }}>
-                      {isSMR ? 'Yes (SMR)' : isYes ? 'Yes' : 'No'}
-                    </span>
-                  );
-                })()}
-              </td>
-              <td style={statusCellStyle(session.has_biopsy)}>
-                {session.has_biopsy ? 'Yes' : 'No'}
-              </td>
-              <td style={statusCellStyle(session.has_annotations)}>
-                {session.has_annotations ? 'Yes' : 'No'}
-              </td>
-              <td style={statusCellStyle(session.has_additional_docs)}>
-                {session.has_additional_docs ? 'Yes' : 'No'}
-              </td>
-              <td style={{ ...tdStyle, textAlign: 'center' }}>
-                <button
-                  onClick={() => fetchSessionDetail(session.id)}
-                  style={linkButtonStyle}
-                >
-                  {!isSuperViewer && session.has_assessment ? 'Edit Assessment' : 'View Responses'}
-                </button>
-              </td>
+      <>
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '30px' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #e0e0e0' }}>
+              {['Reader', 'Role', 'Assigned', 'Submitted'].map((h) => (
+                <th key={h} style={{ padding: '10px 12px', fontSize: '14px', color: '#333' }}>{h}</th>
+              ))}
+              <th style={{ padding: '10px 12px', fontSize: '14px', color: '#333', position: 'relative' }}>
+                Agreement
+                <AgreementInfoPopover />
+              </th>
+                <th style={{ padding: '10px 12px', fontSize: '14px', color: '#333', position: 'relative' }}>
+                Action
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {participants.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ padding: '20px 12px', textAlign: 'center', color: '#999', fontSize: '14px' }}>
+                  No participants yet.
+                </td>
+              </tr>
+            ) : (
+              participants.map((row) => {
+                const roleLabel = [
+                  row.is_reader ? 'Reader' : null,
+                  row.is_arbiter ? 'Arbiter' : null
+                ].filter(Boolean).join(', ');
+
+                return (
+                  <tr key={row.user_id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '12px' }}>{row.full_name}</td>
+                    <td style={{ padding: '12px' }}>{roleLabel}</td>
+                    <td style={{ padding: '12px' }}>{row.assigned_count}</td>
+                    <td style={{ padding: '12px' }}>{row.submitted_count}</td>
+                    <td style={{ padding: '12px' }}>
+                      {row.kappa_score !== null && row.kappa_score !== undefined
+                        ? <span style={kappaBadgeStyle(row.kappa_score)}>{row.kappa_score.toFixed(2)} κ</span>
+                        : '—'}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </>
       <div style={{ marginTop: 10, fontSize: 12, color: '#666', textAlign: 'right' }}>
         <span style={{ color: '#0d6efd', fontWeight: 600 }}>SMR</span> — Breast Ultrasound (USG Breast) Report
       </div>
@@ -367,11 +361,11 @@ const DoctorPage = ({ isEmbedded = false }) => {
           }, [])
           .map((p, i) =>
             p === '...' ? <span key={`dot-${i}`} style={{ color: '#999', fontSize: 13 }}>...</span> :
-            <button
-              key={p}
-              onClick={() => onPageChange(p)}
-              style={{ ...paginationBtnStyle, background: curPage === p ? '#14868C' : '#fff', color: curPage === p ? '#fff' : '#14868C', borderColor: curPage === p ? '#14868C' : '#c8e0e2' }}
-            >{p}</button>
+              <button
+                key={p}
+                onClick={() => onPageChange(p)}
+                style={{ ...paginationBtnStyle, background: curPage === p ? '#14868C' : '#fff', color: curPage === p ? '#fff' : '#14868C', borderColor: curPage === p ? '#14868C' : '#c8e0e2' }}
+              >{p}</button>
           )}
         <button
           onClick={() => onPageChange(Math.min(totalPages, curPage + 1))}
@@ -397,7 +391,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
       <>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div style={{ fontSize: 13, color: '#888' }}>
-            {filtered.length} institution{filtered.length !== 1 ? 's' : ''}, {totalSubjects} total subjects
+            {filtered.length} institution{filtered.length !== 1 ? 's' : ''}, {totalSubjects} total readers
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={expandAll} style={accordionToggleBtnStyle}>Expand All</button>
@@ -410,14 +404,6 @@ const DoctorPage = ({ isEmbedded = false }) => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 14, color: '#14868C', transition: 'transform 0.2s', display: 'inline-block', transform: expandedInstitutions[h.hospital_name] ? 'rotate(90deg)' : 'rotate(0deg)' }}>&#9654;</span>
                 <span style={{ fontWeight: 600, color: '#333', fontSize: 14 }}>{h.hospital_name}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <span style={accordionBadgeStyle('#e8f7f8', '#14868C')}>
-                  {h.subject_count} subject{h.subject_count !== 1 ? 's' : ''}
-                </span>
-                <span style={accordionBadgeStyle(h.assessment_count > 0 ? '#e6f9e6' : '#fef2f2', h.assessment_count > 0 ? '#16a34a' : '#dc2626')}>
-                  {h.assessment_count} assessment{h.assessment_count !== 1 ? 's' : ''}
-                </span>
               </div>
             </div>
             {expandedInstitutions[h.hospital_name] && (
@@ -454,7 +440,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
     <div style={contentStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <h2 style={{ color: '#333', margin: 0 }}>Subject List</h2>
+          <h2 style={{ color: '#333', margin: 0 }}>Admin Reader History</h2>
           {!isSuperViewer && sortStack.map((s, i) => (
             <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, backgroundColor: '#e8f7f8', color: '#14868C', fontWeight: 600 }}>
               {s.key}{s.dir === 'asc' ? '↑' : '↓'}
@@ -541,7 +527,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
                   )}
                 </tbody>
               </table>
-              
+
               {isSuperViewer ? (
                 selectedSession.assessment ? (
                   <DoctorAssessmentForm
@@ -610,13 +596,9 @@ const DoctorPage = ({ isEmbedded = false }) => {
   }
 
   return (
-    <Layout 
-      userRole="clinician" 
-      handleLogout={handleLogout} 
-      fullWidth={true}
-    >
+    <>
       {content}
-    </Layout>
+    </>
   );
 };
 
@@ -737,7 +719,7 @@ const modalOverlayStyle = {
 const modalContentStyle = {
   backgroundColor: '#fff',
   width: '80%',
-  maxWidth: '90vw',
+  maxWidth: '80vw',
   maxHeight: '80vh',
   borderRadius: '8px',
   display: 'flex',
@@ -823,4 +805,4 @@ const accordionToggleBtnStyle = {
   fontFamily: 'inherit',
 };
 
-export default DoctorPage;
+export default MRMCTableDetails;
