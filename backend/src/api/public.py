@@ -6,8 +6,9 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from ..db.session import get_questionnaire_db
+from ..db.session import get_questionnaire_db, get_db
 from ..core.config import settings
+from ..models.models import ModelWeightsVersionControl, ModelWeights, RiskThresholdsVersionControl, RiskThresholds
 from google.cloud import storage
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
@@ -21,7 +22,39 @@ if _questionnaire_json_path.exists():
         _QUESTION_TEXT_MAP = {k: v.get("question", k) for k, v in json.load(_f).get("questions", {}).items()}
 
 
-def calculate_snehitha_risk(form_data: dict) -> str:
+def _get_active_weights(app_db: Session) -> Dict[str, float]:
+    active_version = (
+        app_db.query(ModelWeightsVersionControl)
+        .filter(ModelWeightsVersionControl.is_active == True)
+        .first()
+    )
+    if not active_version:
+        raise HTTPException(status_code=500, detail="No active model weights version found")
+
+    rows = (
+        app_db.query(ModelWeights)
+        .filter(ModelWeights.version_number == active_version.version_number)
+        .all()
+    )
+    return {row.feature_name: float(row.weight_value) for row in rows}
+
+
+def _get_active_thresholds(app_db: Session):
+    active_version = (
+        app_db.query(RiskThresholdsVersionControl)
+        .filter(RiskThresholdsVersionControl.is_active == True)
+        .first()
+    )
+    if not active_version:
+        raise HTTPException(status_code=500, detail="No active risk thresholds version found")
+
+    return (
+        app_db.query(RiskThresholds)
+        .filter(RiskThresholds.version_number == active_version.version_number)
+        .all()
+    )
+
+def calculate_snehitha_risk(form_data: dict, weights: Dict[str, float]) -> str:
     age = int(form_data.get("Q1", 0) or 0)
     age_at_menarche = int(form_data.get("Q10", 0) or 0)
     irregular_cycles = 1 if form_data.get("Q12_Current") == "No" else 0
@@ -37,15 +70,15 @@ def calculate_snehitha_risk(form_data: dict) -> str:
     age_first_live_birth_30_or_more = 1 if age_first_birth_gte30 else 0
 
     logit_p = (
-        -0.940
-        + (0.027 * age)
-        - (0.082 * age_at_menarche)
-        + (0.453 * irregular_cycles)
-        - (0.892 * breastfeeding_24m)
-        + (0.810 * first_degree_relatives)
-        + (1.420 * previous_biopsy)
-        + (0.811 * age_first_live_birth_2529_or_nullipara)
-        + (1.035 * age_first_live_birth_30_or_more)
+        weights["intercept"]
+        + weights["age"] * age
+        + weights["age_at_menarche"] * age_at_menarche
+        + weights["irregular_cycles"] * irregular_cycles
+        + weights["breastfeeding_24m"] * breastfeeding_24m
+        + weights["first_degree_relatives"] * first_degree_relatives
+        + weights["previous_biopsy"] * previous_biopsy
+        + weights["age_first_live_birth_2529_or_nullipara"] * age_first_live_birth_2529_or_nullipara
+        + weights["age_first_live_birth_30_or_more"] * age_first_live_birth_30_or_more
     )
 
     probability = 1 / (1 + math.exp(-logit_p))
@@ -53,6 +86,15 @@ def calculate_snehitha_risk(form_data: dict) -> str:
     if math.isnan(risk_percentage):
         risk_percentage = 0.00
     return str(risk_percentage)
+
+
+def determine_risk_category(risk_decimal: float, thresholds) -> str:
+    for t in thresholds:
+        lo = float(t.min_percentage) if t.min_percentage is not None else float("-inf")
+        hi = float(t.max_percentage) if t.max_percentage is not None else float("inf")
+        if lo <= risk_decimal < hi:
+            return t.risk_category
+    return "Unknown"
 
 
 @router.post("/session/start")
@@ -114,7 +156,11 @@ class SubmitPayload(BaseModel):
 
 
 @router.post("/submit")
-def submit_questionnaire(payload: SubmitPayload, db: Session = Depends(get_questionnaire_db)):
+def submit_questionnaire(
+    payload: SubmitPayload,
+    db: Session = Depends(get_questionnaire_db),
+    app_db: Session = Depends(get_db),
+):
     session_id = payload.sessionId
     form_data_en = payload.formDataEn
 
@@ -129,7 +175,9 @@ def submit_questionnaire(payload: SubmitPayload, db: Session = Depends(get_quest
         raise HTTPException(status_code=404, detail="Session not found. Please start a new questionnaire.")
 
     try:
-        risk_percentage = calculate_snehitha_risk(form_data_en)
+        weights = _get_active_weights(app_db)
+        thresholds = _get_active_thresholds(app_db)
+        risk_percentage = calculate_snehitha_risk(form_data_en, weights)
 
         now = datetime.datetime.utcnow()
         for key, value in form_data_en.items():
@@ -145,15 +193,9 @@ def submit_questionnaire(payload: SubmitPayload, db: Session = Depends(get_quest
             )
             now = now + datetime.timedelta(seconds=1)
 
-        risk_decimal = round(float(risk_percentage) / 100, 2)
-        if risk_decimal < 0.4004:
-            risk_cat = "Baseline Risk"
-        elif risk_decimal < 0.574:
-            risk_cat = "Evident Risk"
-        elif risk_decimal < 0.795:
-            risk_cat = "Significant Risk"
-        else:
-            risk_cat = "High Risk"
+        risk_pct_float = float(risk_percentage)
+        risk_decimal = round(risk_pct_float / 100, 4)
+        risk_cat = determine_risk_category(risk_decimal, thresholds)
 
         db.execute(
             text(

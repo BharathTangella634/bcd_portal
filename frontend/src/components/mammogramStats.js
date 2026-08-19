@@ -918,7 +918,6 @@ const MammogramStats = () => {
               </span>
             </div>
           </div>
-
           <div
             className="chart-wrapper hospital-chart-scroll"
             style={{ height: "550px", '--hospital-count': byHospital.length }}

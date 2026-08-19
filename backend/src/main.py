@@ -14,10 +14,12 @@ from .api import (
     stats,
     public,
     mammogram,
+    risk_categories,
+    model_weights,
+    risk_thresholds,
 )
 
 # Setup logging
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,7 @@ async def add_process_time_header(request: Request, call_next):
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Should be restricted in production
+    allow_origins=["*"],  # Should be restricted in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,6 +58,9 @@ app.include_router(public.router, prefix="/api", tags=["public"])
 app.include_router(mammogram.router, prefix="/api/v1/mammogram", tags=["mammogram"])
 app.include_router(jobs.router, prefix="/api/internal/jobs", tags=["internal-jobs"])
 app.include_router(reminders.router, prefix="/api/v1/reminders", tags=["reminders"])
+app.include_router(risk_categories.router, prefix="/api/v1/risk-categories", tags=["risk-categories"])
+app.include_router(model_weights.router, prefix="/api/v1/model-weights", tags=["model-weights"])
+app.include_router(risk_thresholds.router, prefix="/api/v1/risk-thresholds", tags=["risk-thresholds"])
 
 @app.get("/api/health")
 def health_check():
