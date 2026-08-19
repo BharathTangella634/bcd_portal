@@ -348,7 +348,14 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [viewingAttachment, setViewingAttachment] = useState(null);
-  const [toast, setToast] = useState(null); // { text: string }
+  const [toast, setToast] = useState(null);
+  const [uploadedTypes, setUploadedTypes] = useState({});
+
+  const handleUploadComplete = (fileType, gcsUrl) => {
+    setUploadedTypes(prev => ({ ...prev, [fileType]: gcsUrl }));
+  };
+
+  const isUploaded = (type) => !!getAttachmentByType(type) || !!uploadedTypes[type];
 
   useEffect(() => {
     if (!toast) return;
@@ -398,13 +405,12 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
       return;
     }
 
-    // Mandatory: all four Mammography View images + the Mammography Report
     const missingViews = [];
-    if (!getAttachmentByType('mammo_cc_left')) missingViews.push('CC Left');
-    if (!getAttachmentByType('mammo_cc_right')) missingViews.push('CC Right');
-    if (!getAttachmentByType('mammo_mlo_left')) missingViews.push('MLO Left');
-    if (!getAttachmentByType('mammo_mlo_right')) missingViews.push('MLO Right');
-    const missingReport = !getAttachmentByType('mammo_reading');
+    if (!isUploaded('mammo_cc_left')) missingViews.push('CC Left');
+    if (!isUploaded('mammo_cc_right')) missingViews.push('CC Right');
+    if (!isUploaded('mammo_mlo_left')) missingViews.push('MLO Left');
+    if (!isUploaded('mammo_mlo_right')) missingViews.push('MLO Right');
+    const missingReport = !isUploaded('mammo_reading');
 
     if (missingViews.length > 0 || missingReport) {
       const parts = [];
@@ -464,13 +470,12 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
     }
   };
 
-  // Live (pre-submit) mandatory-field status, used for the red borders and the alert banner
   const liveMissingViews = [];
-  if (!getAttachmentByType('mammo_cc_left')) liveMissingViews.push('CC Left');
-  if (!getAttachmentByType('mammo_cc_right')) liveMissingViews.push('CC Right');
-  if (!getAttachmentByType('mammo_mlo_left')) liveMissingViews.push('MLO Left');
-  if (!getAttachmentByType('mammo_mlo_right')) liveMissingViews.push('MLO Right');
-  const liveMissingReport = !getAttachmentByType('mammo_reading');
+  if (!isUploaded('mammo_cc_left')) liveMissingViews.push('CC Left');
+  if (!isUploaded('mammo_cc_right')) liveMissingViews.push('CC Right');
+  if (!isUploaded('mammo_mlo_left')) liveMissingViews.push('MLO Left');
+  if (!isUploaded('mammo_mlo_right')) liveMissingViews.push('MLO Right');
+  const liveMissingReport = !isUploaded('mammo_reading');
   const showMammoAlert = !readOnly && (liveMissingViews.length > 0 || liveMissingReport);
 
   return (
@@ -556,10 +561,10 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
         <div style={styles.card}>
           <div style={styles.cardHeader}>
             <span style={styles.cardHeaderIcon}>&#128248;</span> Mammography Views {!readOnly && <span style={{ color: '#ffd6d6', fontSize: 14 }}>*</span>}
-            {getAttachmentByType('mammo_cc_right') &&
-              getAttachmentByType('mammo_cc_left') &&
-              getAttachmentByType('mammo_mlo_right') &&
-              getAttachmentByType('mammo_mlo_left') && (
+            {isUploaded('mammo_cc_right') &&
+              isUploaded('mammo_cc_left') &&
+              isUploaded('mammo_mlo_right') &&
+              isUploaded('mammo_mlo_left') && (
                 <span style={{ marginLeft: 'auto', background: '#d4edda', color: '#155724', padding: '4px 12px', borderRadius: 12, fontSize: 13, fontWeight: 600 }}>
                   &#10003; All DICOMs uploaded
                 </span>
@@ -570,22 +575,22 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
               <div>
                 <div style={{ textAlign: 'center', fontWeight: 600, color: '#14868C', marginBottom: 10, fontSize: 14 }}>Left Breast</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={uploadSlotStyle(!readOnly && !getAttachmentByType('mammo_cc_left'))}>
-                    <ResumableUpload label="CC Left" hint=".dcm (up to 100MB)" accept=".dcm,application/dicom,image/*" fileType="mammo_cc_left" sessionId={sessionId} existing={getAttachmentByType('mammo_cc_left')} onView={setViewingAttachment} readOnly={readOnly} />
+                  <div style={uploadSlotStyle(!readOnly && !isUploaded('mammo_cc_left'))}>
+                    <ResumableUpload label="CC Left" hint=".dcm (up to 100MB)" accept=".dcm,application/dicom,image/*" fileType="mammo_cc_left" sessionId={sessionId} existing={getAttachmentByType('mammo_cc_left')} onView={setViewingAttachment} onComplete={handleUploadComplete} readOnly={readOnly} />
                   </div>
-                  <div style={uploadSlotStyle(!readOnly && !getAttachmentByType('mammo_mlo_left'))}>
-                    <ResumableUpload label="MLO Left" hint=".dcm (up to 100MB)" accept=".dcm,application/dicom,image/*" fileType="mammo_mlo_left" sessionId={sessionId} existing={getAttachmentByType('mammo_mlo_left')} onView={setViewingAttachment} readOnly={readOnly} />
+                  <div style={uploadSlotStyle(!readOnly && !isUploaded('mammo_mlo_left'))}>
+                    <ResumableUpload label="MLO Left" hint=".dcm (up to 100MB)" accept=".dcm,application/dicom,image/*" fileType="mammo_mlo_left" sessionId={sessionId} existing={getAttachmentByType('mammo_mlo_left')} onView={setViewingAttachment} onComplete={handleUploadComplete} readOnly={readOnly} />
                   </div>
                 </div>
               </div>
               <div>
                 <div style={{ textAlign: 'center', fontWeight: 600, color: '#14868C', marginBottom: 10, fontSize: 14 }}>Right Breast</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={uploadSlotStyle(!readOnly && !getAttachmentByType('mammo_cc_right'))}>
-                    <ResumableUpload label="CC Right" hint=".dcm (up to 100MB)" accept=".dcm,application/dicom,image/*" fileType="mammo_cc_right" sessionId={sessionId} existing={getAttachmentByType('mammo_cc_right')} onView={setViewingAttachment} readOnly={readOnly} />
+                  <div style={uploadSlotStyle(!readOnly && !isUploaded('mammo_cc_right'))}>
+                    <ResumableUpload label="CC Right" hint=".dcm (up to 100MB)" accept=".dcm,application/dicom,image/*" fileType="mammo_cc_right" sessionId={sessionId} existing={getAttachmentByType('mammo_cc_right')} onView={setViewingAttachment} onComplete={handleUploadComplete} readOnly={readOnly} />
                   </div>
-                  <div style={uploadSlotStyle(!readOnly && !getAttachmentByType('mammo_mlo_right'))}>
-                    <ResumableUpload label="MLO Right" hint=".dcm (up to 100MB)" accept=".dcm,application/dicom,image/*" fileType="mammo_mlo_right" sessionId={sessionId} existing={getAttachmentByType('mammo_mlo_right')} onView={setViewingAttachment} readOnly={readOnly} />
+                  <div style={uploadSlotStyle(!readOnly && !isUploaded('mammo_mlo_right'))}>
+                    <ResumableUpload label="MLO Right" hint=".dcm (up to 100MB)" accept=".dcm,application/dicom,image/*" fileType="mammo_mlo_right" sessionId={sessionId} existing={getAttachmentByType('mammo_mlo_right')} onView={setViewingAttachment} onComplete={handleUploadComplete} readOnly={readOnly} />
                   </div>
                 </div>
               </div>
@@ -632,8 +637,8 @@ const DoctorAssessmentForm = ({ sessionId, initialData, onSaveSuccess, snehithaR
           </div>
           <div style={{ ...styles.cardBody, borderTop: '2px solid #e8f4f5' }}>
             <label style={styles.label}>Mammography Report {!readOnly && <span style={{ color: '#dc3545' }}>*</span>}</label>
-            <div style={uploadSlotStyle(!readOnly && !getAttachmentByType('mammo_reading'))}>
-              <ResumableUpload label="Upload Mammography Report" hint=".pdf (up to 25MB)" accept=".pdf,image/*" fileType="mammo_reading" sessionId={sessionId} existing={getAttachmentByType('mammo_reading')} onView={setViewingAttachment} readOnly={readOnly} />
+            <div style={uploadSlotStyle(!readOnly && !isUploaded('mammo_reading'))}>
+              <ResumableUpload label="Upload Mammography Report" hint=".pdf (up to 25MB)" accept=".pdf,image/*" fileType="mammo_reading" sessionId={sessionId} existing={getAttachmentByType('mammo_reading')} onView={setViewingAttachment} onComplete={handleUploadComplete} readOnly={readOnly} />
             </div>
           </div>
         </div>
