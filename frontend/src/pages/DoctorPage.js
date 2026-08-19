@@ -248,7 +248,7 @@ const DoctorPage = ({ isEmbedded = false }) => {
             <th style={thCenterStyle}>Mammography Report</th>
             <th style={thCenterStyle}>Breast Ultrasound (USG Breast)</th>
             <th style={thCenterStyle}>Breast Ultrasound (USG Breast) Report</th> */}
-            <th style={thCenterStyle}>Mammography + Report</th>
+             <th style={thCenterStyle}>Mammography + Report</th>
             <th style={thCenterStyle}>Breast Ultrasound + Report</th>
             <th style={thCenterStyle}>Biopsy</th>
             <th style={thCenterStyle}>Annotations</th>
@@ -367,11 +367,11 @@ const DoctorPage = ({ isEmbedded = false }) => {
           }, [])
           .map((p, i) =>
             p === '...' ? <span key={`dot-${i}`} style={{ color: '#999', fontSize: 13 }}>...</span> :
-              <button
-                key={p}
-                onClick={() => onPageChange(p)}
-                style={{ ...paginationBtnStyle, background: curPage === p ? '#14868C' : '#fff', color: curPage === p ? '#fff' : '#14868C', borderColor: curPage === p ? '#14868C' : '#c8e0e2' }}
-              >{p}</button>
+            <button
+              key={p}
+              onClick={() => onPageChange(p)}
+              style={{ ...paginationBtnStyle, background: curPage === p ? '#14868C' : '#fff', color: curPage === p ? '#fff' : '#14868C', borderColor: curPage === p ? '#14868C' : '#c8e0e2' }}
+            >{p}</button>
           )}
         <button
           onClick={() => onPageChange(Math.min(totalPages, curPage + 1))}
@@ -541,13 +541,8 @@ const DoctorPage = ({ isEmbedded = false }) => {
                   )}
                 </tbody>
               </table>
-<<<<<<< HEAD
               
               {isSuperViewer ? (
-=======
-
-              {selectedSessionReadOnly ? (
->>>>>>> feature/m-development
                 selectedSession.assessment ? (
                   <DoctorAssessmentForm
                     sessionId={selectedSession.id}
@@ -615,9 +610,9 @@ const DoctorPage = ({ isEmbedded = false }) => {
   }
 
   return (
-    <Layout
-      userRole="clinician"
-      handleLogout={handleLogout}
+    <Layout 
+      userRole="clinician" 
+      handleLogout={handleLogout} 
       fullWidth={true}
     >
       {content}
