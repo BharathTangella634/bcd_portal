@@ -157,11 +157,26 @@ def get_reports_by_hospital(db: Session) -> list:
         for row in results
     ]
 
-def get_mammogram_by_hospital(db: Session) -> list:
-    subject_count_subq = db.query(func.count(PatientSession.id)).filter(
-        PatientSession.hospital_id == Hospital.id
-    ).correlate(Hospital).scalar_subquery()
+def get_mammogram_by_hospital(db: Session, questionnaire_db: Session) -> list:
+    # --- subject counts from questionnaire_db, keyed by hospital name ---
+    hospital_rows = db.query(Hospital.name).filter(
+        ~Hospital.name.in_(list(EXCLUDED_HOSPITAL_NAMES))
+    ).all()
+    valid_hospitals = [h.name for h in hospital_rows]
 
+    subject_counts_by_name = {}
+    if valid_hospitals:
+        inst_filter = _get_institute_filter()
+        params = {"inst_questions": INSTITUTE_QUESTIONS, "valid_names": tuple(valid_hospitals)}
+        subj_rows = questionnaire_db.execute(text(f"""
+            SELECT sd_inst.answer AS institute, COUNT(DISTINCT s.session_id) AS subjects
+            FROM session_table s {inst_filter}
+            WHERE s.snehita_lifetime_risk IS NOT NULL
+            GROUP BY sd_inst.answer
+        """), params).fetchall()
+        subject_counts_by_name = {r[0]: int(r[1]) for r in subj_rows}
+
+    # --- everything else stays as-is, from app_db ---
     assessment_count_subq = db.query(func.count(DoctorAssessment.id)).filter(
         DoctorAssessment.hospital_id == Hospital.id
     ).correlate(Hospital).scalar_subquery()
@@ -190,7 +205,6 @@ def get_mammogram_by_hospital(db: Session) -> list:
         Machine.make.label('machine_make'),
         Machine.technology.label('machine_technology'),
         Machine.no_of_machines.label('machine_count'),
-        subject_count_subq.label('subject_count'),
         assessment_count_subq.label('assessment_count'),
         dicom_count_subq.label('dicom_count'),
         report_count_subq.label('report_count'),
@@ -199,7 +213,7 @@ def get_mammogram_by_hospital(db: Session) -> list:
     ).outerjoin(
         Machine, Machine.hospital_id == Hospital.id
     ).order_by(
-        subject_count_subq.desc()
+        assessment_count_subq.desc()
     ).all()
 
     hospital_data = []
@@ -215,14 +229,13 @@ def get_mammogram_by_hospital(db: Session) -> list:
                 'technology': row.machine_technology,
                 'machine_count': row.machine_count,
             }] if row.machine_name else [],
-            'subject_count': row.subject_count or 0,
+            'subject_count': subject_counts_by_name.get(row.name, 0),
             'assessment_count': row.assessment_count or 0,
             'dicom_count': row.dicom_count or 0,
             'report_count': row.report_count or 0,
         })
 
     return hospital_data
-
 def get_hospital_type_breakdown(db: Session) -> list:
     rows = db.query(
         Hospital.id,
@@ -350,7 +363,7 @@ def get_portal_mammogram_dashboard(db: Session, questionnaire_db: Session) -> di
     report_missing = max(total_assessments - report_uploaded, 0)
     view_counts = get_view_type_counts(db)
     totals = get_total_mammogram_stats(db, questionnaire_db)
-    by_hospital = get_mammogram_by_hospital(db)
+    by_hospital = get_mammogram_by_hospital(db, questionnaire_db)
     hospital_type_breakdown = get_hospital_type_breakdown(db)
     reports_by_hospital = get_reports_by_hospital(db)
     birads_stats = get_birads_by_institute_and_side(db)
